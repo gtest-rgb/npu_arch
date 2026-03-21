@@ -1107,34 +1107,34 @@ Scalar 性能影响链:
 | GM 读写次数 | 多 | 显著减少 |
 | 级联场景 GM 访问 | 必须经过 | 完全跳过 |
 
-4. **级联优化需正确使用数据通路**
+### 10.4 **级联优化需正确使用数据通路**
    - Vector→Cube: 使用 MTE3 (UB → L1) → Cube 计算结果通过 FixPipe 直通 UB 进行后处理
    - Cube→Vector 级联优化需要将 Cube 结果通过 Mte3(UB → L1) 后再搬运到 cube 进行矩阵乘
    - 量化推理不需要 Cube→vector级联，    - 矩阵乘后需要 Softmax/L归一化等复杂后处理
    - MatMul → Softmax等简单激活 →Cube→Vector级联
    - Attention: 只有独立 Vector算阶段是双向级联才需要真正的级联优化
 
-1. **DoubleBuffer 不总是带来收益**
+### 10.5 **DoubleBuffer 不总是带来收益**
    - 数据量小、一次性处理完时可能适得其反
    - 计算时间远超搬运时间时收益有限
 
-2. **合理设置同步点**
+### 10.6. **合理设置同步点**
    - 避免数据竞争
    - SetFlag/WaitFlag 必须成对使用
 
-3. **容量计算需考虑对齐要求**
+### 10.7 **容量计算需考虑对齐要求**
    - L1: 32 Byte
    - L0B: **512 Byte**
    - UB: 32 Byte
    - BiasTable/Fixpipe Buffer: **64 Byte**
    - 分形大小 (16×16)
 
-4. **级联优化需正确使用数据通路**
+### 10.8 **级联优化需正确使用数据通路**
    - Vector→Cube: 使用 MTE3 (UB→L1)
    - Cube→Vector: 使用 FixPipe (L1→UB)，仅用于独立 Vector 算子
    - 量化、ReLU 等可通过 FixPipe 随路处理，无需级联
    - 避免不必要的 GM 中转
 
-5. **Bank 冲突可能抵消 DoubleBuffer 收益**
+### 10.9 **Bank 冲突可能抵消 DoubleBuffer 收益**
    - 合理分配 Block 位置
    - 关注并发访问模式
