@@ -219,10 +219,10 @@ GetCoreMemSize();
 
 | 搬运单元 | 数据通路 | 说明 |
 |----------|----------|------|
-| **MTE1** | L1 → L0B, L1 → BT Buffer | Cube 数据准备 |
-| **MTE2** | GM → {L1, L0B, UB} | 外部数据加载，基于分形/Cache Line 对齐更优 |
-| **MTE3** | UB → {GM, L1} | 结果写回 |
-| **FixPipe** | L1 → {GM/L1}, L1 → FP Buffer, L1 → UB | 支持随路数据格式/类型转换 |
+| **MTE1** | L1 → L0B | Cube 数据准备 |
+| **MTE2** | GM → {L1, UB} | 外部数据加载，基于分形/Cache Line 对齐更优 |
+| **MTE3** | UB → {GM, L1}；L1 → GM | 结果写回 |
+| **FixPipe** | L1 → L1, L1 → BT Buffer, L1 → FP Buffer, L1 → UB | 支持随路数据格式/类型转换 |
 
 ### 5.2 搬运对齐要求
 
