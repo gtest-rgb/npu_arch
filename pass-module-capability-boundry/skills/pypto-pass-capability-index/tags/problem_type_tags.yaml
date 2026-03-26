@@ -1,0 +1,83 @@
+# 问题类型标签
+# 用于标识可能的问题分类
+
+tags:
+  - name: MEMORY_TYPE
+    description: 内存类型相关（L0A/L0B/L0C/L1/UB/DDR分配和转换）
+    related_passes:
+      - AssignMemoryType
+      - GenerateMoveOp
+    typical_issues:
+      - 内存类型冲突，无法找到合法路径
+      - offset不对齐导致强制走DDR
+      - 超大Buffer降级为DDR
+
+  - name: DATA_LAYOUT
+    description: 数据布局相关（ND/NZ/NC等格式）
+    related_passes:
+      - IntraSubgraphAdapter
+      - AxisCombine
+    typical_issues:
+      - 布局不匹配需要插入适配操作
+      - 轴合并导致Shape变化
+
+  - name: SCHEDULING
+    description: 调度相关（指令级并行、依赖分析）
+    related_passes:
+      - OoOSchedule
+      - PriorScheduling
+    typical_issues:
+      - 依赖分析不完整
+      - 调度效率不高
+
+  - name: SYNC
+    description: 同步相关（流间同步、事件同步）
+    related_passes:
+      - InsertSync
+      - TuneSyncForVF
+    typical_issues:
+      - 同步点缺失导致数据竞争
+      - 同步过多导致性能下降
+
+  - name: MEMORY_REUSE
+    description: 内存复用相关（Buffer合并、生命周期分析）
+    related_passes:
+      - GlobalMemoryReuse
+      - SrcDstBufferMerge
+      - NBufferMerge
+      - L1CopyInReuseMerge
+      - ReduceCopyMerge
+    typical_issues:
+      - 生命周期分析错误导致数据覆盖
+      - 复用机会未被识别
+
+  - name: GRAPH_OPTIMIZATION
+    description: 图优化相关（消除冗余、合并操作）
+    related_passes:
+      - RemoveRedundantReshape
+      - RemoveRedundantOp
+      - CommonOperationEliminate
+      - MergeViewAssemble
+    typical_issues:
+      - 冗余操作未被识别
+      - 合并条件不满足
+
+  - name: DYNAMIC_SHAPE
+    description: 动态Shape相关
+    related_passes:
+      - InferDynShape
+      - DynAttrToStatic
+    typical_issues:
+      - 动态Shape传播失败
+      - 属性无法静态化
+
+  - name: TENSOR_SPLIT
+    description: Tensor拆分相关
+    related_passes:
+      - SplitReshape
+      - SplitRawTensor
+      - SplitLargeFanoutTensor
+      - SplitK
+    typical_issues:
+      - 拆分策略不合适
+      - 拆分后无法重新组合

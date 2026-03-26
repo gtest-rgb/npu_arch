@@ -1,0 +1,87 @@
+# 特殊场景标签
+# 用于标识需要特别关注的场景
+
+tags:
+  - name: CUBE_CASCADE
+    description: Cube级联场景（多个MATMUL通过ASSEMBLE/VIEW连接）
+    related_scenarios:
+      - SC001
+    characteristics:
+      - 多个Cube操作级联执行
+      - 小搬大（ASSEMBLE）和大搬小（VIEW）交替
+      - 需要处理内存类型传递和对齐
+    key_constraints:
+      - ASSEMBLE offset必须32B对齐
+      - VIEW/ASSEMBLE/RESHAPE嵌套深度≤3
+      - 小Tile到大Tile维度必须整除
+
+  - name: DYNAMIC_SHAPE
+    description: 动态Shape场景（Shape在运行时确定）
+    related_passes:
+      - InferDynShape
+      - DynAttrToStatic
+    characteristics:
+      - 某些维度在编译时未知
+      - 需要运行时计算Shape
+    key_constraints:
+      - 动态Shape传播必须完整
+      - 部分优化在动态Shape下不适用
+
+  - name: MULTI_OUTPUT
+    description: 多输出场景（一个Tensor被多个Consumer使用）
+    related_passes:
+      - SplitLargeFanoutTensor
+      - DuplicateOp
+    characteristics:
+      - Fanout较大
+      - 可能需要复制或拆分Tensor
+    key_constraints:
+      - Fanout超过阈值时需要拆分
+      - 拆分可能影响内存布局
+
+  - name: LARGE_TENSOR
+    description: 大Tensor场景（Tensor大小超过片上内存容量）
+    related_passes:
+      - SplitRawTensor
+      - GlobalMemoryReuse
+    characteristics:
+      - Tensor大小超过L1/UB容量
+      - 需要分块处理或使用DDR
+    key_constraints:
+      - 需要合理切分
+      - DDR访问可能成为瓶颈
+
+  - name: LOOP_NESTING
+    description: 循环嵌套场景（多层Loop嵌套）
+    related_passes:
+      - LoopUnroll
+      - LoopaxesProc
+    characteristics:
+      - 多层Loop嵌套
+      - 需要展开或优化
+    key_constraints:
+      - 循环展开后代码膨胀
+      - 循环变量处理
+
+  - name: MIX_SUBGRAPH
+    description: 混合子图场景（多个不同类型子图混合执行）
+    related_passes:
+      - MixSubgraphSplit
+      - GraphPartition
+    characteristics:
+      - 不同执行模式的子图混合
+      - 需要正确拆分和调度
+    key_constraints:
+      - 子图拆分边界正确
+      - 跨子图依赖处理
+
+  - name: PADDING
+    description: Padding场景（需要补齐数据）
+    related_passes:
+      - PadLocalBuffer
+    characteristics:
+      - 数据维度不满足硬件要求
+      - 需要填充补齐
+    key_constraints:
+      - Padding值正确
+      - Padding策略选择

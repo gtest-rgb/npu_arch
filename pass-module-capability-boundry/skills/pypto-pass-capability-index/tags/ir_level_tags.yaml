@@ -1,0 +1,72 @@
+# IR层级标签
+# 用于标识场景所在的IR层级
+
+tags:
+  - name: TENSOR_GRAPH
+    description: Tensor Graph层级，张量级IR
+    passes:
+      - LoopUnroll
+      - ExpandFunction
+      - RemoveRedundantReshape
+      - AutoCast
+      - InferMemoryConflict
+      - RemoveUndrivenView
+    characteristics:
+      - 操作是逻辑级别的
+      - 不涉及内存分配
+      - 主要做图优化和变换
+
+  - name: TILE_GRAPH
+    description: Tile Graph层级，Tile级IR
+    passes:
+      - AssignMemoryType
+      - MergeViewAssemble
+      - SplitReshape
+      - SplitRawTensor
+      - SplitLargeFanoutTensor
+      - GraphPartition
+      - IntraSubgraphAdapter
+      - GenerateMoveOp
+      - CommonOperationEliminate
+      - AxisCombine
+      - PadLocalBuffer
+      - RemoveUnalignedReshape
+      - ReplaceTensor
+      - PreGraphProcess
+      - InferDynShape
+      - SubgraphToFunction
+      - SplitK
+      - ReduceCopyMerge
+      - NBufferMerge
+      - L1CopyInReuseMerge
+      - DuplicateOp
+      - InsertOpForViewAssemble
+      - InferDiscontinuousInput
+      - RemoveRedundantOp
+    characteristics:
+      - 涉及内存类型分配
+      - 涉及数据搬运路径
+      - Tile切分和合并
+
+  - name: BLOCK_GRAPH
+    description: Block Graph层级，Block级IR/执行图
+    passes:
+      - GlobalMemoryReuse
+      - OoOSchedule
+      - InsertSync
+      - CodegenPreproc
+      - InferParamIndex
+      - CopyOutResolve
+      - SrcDstBufferMerge
+      - AddAlloc
+      - RemoveAlloc
+      - DynAttrToStatic
+      - MixSubgraphSplit
+      - LoopaxesProc
+      - TuneTileOpSeqForVF
+      - TuneSyncForVF
+    characteristics:
+      - 涉及指令调度
+      - 涉及内存复用
+      - 涉及同步插入
+      - 为CodeGen做准备
