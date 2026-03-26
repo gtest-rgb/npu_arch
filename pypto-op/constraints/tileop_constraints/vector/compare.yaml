@@ -1,0 +1,176 @@
+# Compare Operations: Element-wise comparison
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVector()  OP_CMP (line 476), OP_CMPS (line 480)
+
+# =============================================================================
+# Compare Operations (calc_type=BROADCAST)
+# =============================================================================
+
+OP_CMP:
+  description: "张量逐元素比较（tensor-tensor），输出布尔掩码"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Compare"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常比较"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有cmp_operation属性控制比较运算类型（EQ/NE/GT/LT/GE/LE）
+    - 有cmp_mode属性控制比较模式
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:476 RegisterVector"
+
+OP_CMPS:
+  description: "张量与标量逐元素比较（tensor-scalar），输出布尔掩码"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Cmps"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "标量比较"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 与CMP的区别：第二个操作数为标量（通过scalar属性传入）
+    - 有cmp_operation属性控制比较运算类型（EQ/NE/GT/LT/GE/LE）
+    - 有cmp_mode属性控制比较模式
+    - 无TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:480 RegisterVector"

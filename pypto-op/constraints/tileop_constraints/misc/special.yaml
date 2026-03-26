@@ -1,0 +1,1016 @@
+# Special Purpose Operations: Concat, CumSum, OneHot, Pad, etc.
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVector()  (lines 449-557)
+#   RegisterVectorBinary()  OP_MODS (line 233), OP_EXPANDEXPDIF (line 238)
+#   RegisterVectorUnary()  OP_PAD (line 263)
+#   RegisterCommon()  OP_BRCB (indirect via RegisterVector)
+#
+# Note: OP_EXPANDEXPDIF is in view/expand.yaml (BINARY_OPS set)
+# Note: OP_GATHER_FROM_UB is in vector/gather_scatter.yaml (already documented)
+
+OP_CONCAT:
+  description: "张量拼接（沿指定轴拼接多个张量）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tconcat"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: []
+  notes: |
+    - 有concat、inputCombineAxis、outputCombineAxis属性
+    - 无TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:452 RegisterVector"
+
+OP_CUM_SUM:
+  description: "张量累积求和（沿指定轴计算前缀和）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::TcumSum"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [CUM_SUM_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有axis、flag、excludeBufferReuse属性
+    - 无TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:509 RegisterVector"
+
+OP_ONEHOT:
+  description: "张量独热编码（将索引转换为独热向量）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tonehot"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有numClasses、excludeBufferReuse属性
+    - 有TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:449 RegisterVector"
+
+OP_PAD:
+  description: "张量填充（沿指定维度填充指定值）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tpad"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 在UNARY_OPS集合中
+    - 有TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:263 RegisterVectorUnary"
+
+OP_COMPACT:
+  description: "张量压缩（去除padding后的有效数据，需要临时缓冲区）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::Tcompact"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNARY_OPS_WITH_TMP]
+  notes: |
+    - 在UNARY_OPS_WITH_TMP集合中，需要临时缓冲区
+    - 无TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:455 RegisterVector"
+
+OP_RANGE:
+  description: "张量范围生成（生成等差数列）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::Range"
+  pipe: [PIPE_S, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有START、STEP、dynScalar属性
+    - 使用PIPE_S到PIPE_V流水线（标量输入到向量输出）
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:519 RegisterVector"
+
+OP_HYPOT:
+  description: "张量逐元素求斜边长 sqrt(x^2 + y^2)"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Hypot"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB, UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 二元运算，计算sqrt(x^2 + y^2)
+    - 无TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:483 RegisterVector"
+
+OP_PRELU:
+  description: "张量逐元素PReLU激活 max(x, alpha*x)"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::PReLU"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB, UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNSUPPORT_BF16_OPS, UNSUPPORT_BF16_ARCH35_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有axis、excludeBufferReuse属性
+    - 有TileShapeVerifier验证
+    - 在UNSUPPORT_BF16_OPS中，不支持bf16
+    - 在UNSUPPORT_BF16_ARCH35_OPS中，不支持bf16（架构35）
+    - 在LASTUSE_OPS中
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:489 RegisterVector"
+
+OP_POW:
+  description: "张量逐元素幂运算 x^y"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tpow"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB, UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有scalar、reverseOperand、inputCombineAxis、outputCombineAxis、excludeBufferReuse属性
+    - 无TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:457 RegisterVector"
+
+OP_TRIUL:
+  description: "张量上三角/下三角掩码（将矩阵上三角或下三角设为指定值）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::TTriUL"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNSUPPORT_BF16_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有dynScalar、isUpper、excludeBufferReuse属性
+    - 有TileShapeVerifier验证
+    - 在UNSUPPORT_BF16_OPS中，不支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:512 RegisterVector"
+
+OP_BRCB:
+  description: "张量逐元素广播比较（广播条件分支操作）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tbrcb"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有inputCombineAxis、outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 在LASTUSE_OPS中
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:433 RegisterVector"
+
+OP_MODS:
+  description: "张量与标量取模（标量广播模式）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tmods"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: unsupported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB, UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNSUPPORT_FP16_OPS, UNSUPPORT_BF16_OPS, UNSUPPORT_BF16_ARCH35_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有scalar、reverseOperand、inputCombineAxis、outputCombineAxis、excludeBufferReuse属性
+    - 有TileShapeVerifier验证
+    - 在UNSUPPORT_FP16_OPS中，不支持fp16
+    - 在UNSUPPORT_BF16_OPS中，不支持bf16
+    - 在UNSUPPORT_BF16_ARCH35_OPS中，不支持bf16（架构35）
+    - 在LASTUSE_OPS中
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:233 RegisterVectorBinary"
+
+OP_REMS:
+  description: "张量与标量取余（标量广播模式）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::TRemainderS"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: unsupported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB, UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNSUPPORT_FP16_OPS, UNSUPPORT_BF16_OPS, UNSUPPORT_BF16_ARCH35_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有scalar、reverseOperand、inputCombineAxis、outputCombineAxis、excludeBufferReuse属性
+    - 有TileShapeVerifier验证
+    - 在UNSUPPORT_FP16_OPS中，不支持fp16
+    - 在UNSUPPORT_BF16_OPS中，不支持bf16
+    - 在UNSUPPORT_BF16_ARCH35_OPS中，不支持bf16（架构35）
+    - 在LASTUSE_OPS中
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:193 RegisterVectorBinary"
+
+OP_REMRS:
+  description: "标量与张量取余（标量在前模式）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::TRemainderS"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: unsupported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB, UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNSUPPORT_FP16_OPS, UNSUPPORT_BF16_OPS, UNSUPPORT_BF16_ARCH35_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 标量在前模式（reverseOperand）
+    - 有scalar、reverseOperand、inputCombineAxis、outputCombineAxis、excludeBufferReuse属性
+    - 有TileShapeVerifier验证
+    - 在UNSUPPORT_FP16_OPS中，不支持fp16
+    - 在UNSUPPORT_BF16_OPS中，不支持bf16
+    - 在UNSUPPORT_BF16_ARCH35_OPS中，不支持bf16（架构35）
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:197 RegisterVectorBinary"

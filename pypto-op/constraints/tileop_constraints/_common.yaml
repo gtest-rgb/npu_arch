@@ -1,0 +1,529 @@
+# 公共硬件常量
+# 来源: framework/src/interface/tileop/tileop_common.h
+
+hardware_constants:
+  BLOCK_SIZE: 32
+  BLOCK_NELEM_B16: 16
+  BLOCK_NELEM_B32: 8
+  MASK_LEN: 64
+  REPEAT_MAX: 255
+  REPEAT_STRIDE_MAX: 255
+  DUP_REPEAT_STRIDE_MAX: 4095
+  BLOCK_NUM_ONE_REPEAT: 8
+  NBLOCK_PER_MASK_B16: 4
+  REPEAT_BYTE: 256
+
+alignment_rules:
+  UB: 32
+  L1: 32
+  L0A: 32
+  L0B: 32
+  L0C: 32
+  GM: 32
+
+dtype_constraints:
+  fp16:
+    element_size: 2
+    block_nelem: 16
+  bf16:
+    element_size: 2
+    block_nelem: 16
+  fp32:
+    element_size: 4
+    block_nelem: 8
+  int8:
+    element_size: 1
+    block_nelem: 32
+
+# Tag sets from framework/src/interface/operation/opcode.h
+# Each set is a named collection of OP_CODE values used for capability classification.
+tag_sets:
+  ALLOC_OPCODE:
+    - OP_UB_ALLOC
+    - OP_L1_ALLOC
+    - OP_L0A_ALLOC
+    - OP_L0B_ALLOC
+    - OP_L0C_ALLOC
+    - OP_FIX_ALLOC
+    - OP_BT_ALLOC
+
+  BINARY_OPS:
+    - OP_ADD
+    - OP_SUB
+    - OP_MUL
+    - OP_DIV
+    - OP_MOD
+    - OP_S_ADD
+    - OP_S_SUB
+    - OP_S_MUL
+    - OP_S_DIV
+    - OP_S_MAX
+    - OP_S_MIN
+    - OP_MAXIMUM
+    - OP_MINIMUM
+    - OP_PAIRSUM
+    - OP_PAIRMAX
+    - OP_PAIRMIN
+    - OP_PAIRPROD
+    - OP_BITWISERIGHTSHIFT
+    - OP_BITWISELEFTSHIFT
+    - OP_BITWISEAND
+    - OP_BITWISEOR
+    - OP_BITWISEXOR
+    - OP_EXPANDEXPDIF
+    - OP_COPYSIGN
+
+  BINARY_WITH_BRC_OPS:
+    - OP_ADD_BRC
+    - OP_SUB_BRC
+    - OP_MUL_BRC
+    - OP_DIV_BRC
+    - OP_MAX_BRC
+    - OP_MIN_BRC
+
+  UNARY_OPS:
+    - OP_EXP
+    - OP_EXP2
+    - OP_EXPM1
+    - OP_NEG
+    - OP_RSQRT
+    - OP_SQRT
+    - OP_RELU
+    - OP_CEIL
+    - OP_FLOOR
+    - OP_TRUNC
+    - OP_EXPAND
+    - OP_RECIPROCAL
+    - OP_PAD
+    - OP_ROWSUM
+    - OP_ROWMAX
+    - OP_ROWEXPSUM
+    - OP_ROWEXPMAX
+    - OP_L1_TO_L1
+    - OP_COPY_UB_TO_UB
+    - OP_ROUND
+    - OP_ROWSUMLINE
+    - OP_ABS
+    - OP_LN
+    - OP_ISFINITE
+    - OP_HUB
+    - OP_BITWISENOT
+    - OP_SIGN
+    - OP_ROWPRODLINE
+    - OP_SIGNBIT
+
+  UNARY_OPS_WITH_TMP:
+    - OP_COMPACT
+    - OP_ROWSUM_SINGLE
+    - OP_ROWMAX_SINGLE
+    - OP_ROWMIN_SINGLE
+    - OP_TRANSPOSE_VNCHWCONV
+    - OP_ROWMAX_COMBINE_AXIS_SINGLE
+    - OP_ROWSUM_COMBINE_AXIS_SINGLE
+    - OP_ROWPROD_SINGLE
+
+  VECTOR_SCALAR_OPS:
+    - OP_ADDS
+    - OP_SUBS
+    - OP_MULS
+    - OP_DIVS
+    - OP_MAXS
+    - OP_MINS
+    - OP_BITWISEANDS
+    - OP_BITWISEORS
+    - OP_BITWISEXORS
+    - OP_BITWISERIGHTSHIFTS
+    - OP_BITWISELEFTSHIFTS
+    - OP_SBITWISERIGHTSHIFT
+    - OP_SBITWISELEFTSHIFT
+    - OP_COPYSIGN
+    - OP_LRELU
+
+  SCALAR_VECTOR_SCALAR_OPS:
+    - OP_S_ADDS
+    - OP_S_SUBS
+    - OP_S_MULS
+    - OP_S_DIVS
+    - OP_S_MAXS
+    - OP_S_MINS
+
+  CAST_OPS:
+    - OP_CAST
+
+  GATHER_OPS:
+    - OP_GATHER
+
+  GATHER_ELEMENT_OPS:
+    - OP_GATHER_ELEMENT
+
+  GATHER_MASK_OPS:
+    - OP_GATHER_MASK
+
+  SCATTER_ELEMENT_OPS:
+    - OP_SCATTER_ELEMENT
+
+  SCATTER_OPS:
+    - OP_SCATTER
+
+  WHERE_OPS:
+    - OP_WHERE_TT
+    - OP_WHERE_TS
+    - OP_WHERE_ST
+    - OP_WHERE_SS
+
+  INDEX_ADD_OPS:
+    - OP_INDEX_ADD
+
+  INDEX_PUT_OPS:
+    - OP_INDEX_PUT
+
+  CUM_SUM_OPS:
+    - OP_CUM_SUM
+
+  LOGICALNOT_OPS:
+    - OP_LOGICALNOT
+
+  LOGICALAND_OPS:
+    - OP_LOGICALAND
+
+  FIX_COPY_IN_OPS:
+    - OP_L1_TO_FIX
+    - OP_L1_TO_FIX_QUANT_PRE
+    - OP_L1_TO_FIX_RELU_PRE
+    - OP_L1_TO_FIX_RELU_POST
+    - OP_L1_TO_FIX_QUANT_POST
+    - OP_L1_TO_FIX_ELT_ANTIQ
+    - OP_L1_TO_FIX_MTE2_ANTIQ
+
+  CROSS_L1_UB_OPS:
+    - OP_L1_COPY_UB
+    - OP_L0C_COPY_UB
+    - OP_UB_COPY_L1
+    - OP_UB_COPY_L1_ND
+    - OP_L0C_TO_L1
+
+  DISTRIBUTED_OPS:
+    - OP_SEND_TO_ROUTING_EXPERT
+    - OP_SEND_TO_SHARED_EXPERT
+    - OP_COPY_TO_LOCAL_EXPERT
+    - OP_DISPATCH_SET_FLAG
+    - OP_FFN_SCHED
+    - OP_FFN_BATCHING
+    - OP_FFN_COMBINEINFO
+    - OP_FFN_VALIDCNT
+    - OP_SHMEM_PUT
+    - OP_SHMEM_SIGNAL
+    - OP_SHMEM_GET
+    - OP_SHMEM_REDUCE
+    - OP_BIND_TENSOR
+    - OP_SHMEM_PUT_UB2GM
+    - OP_SHMEM_GET_GM2UB
+    - OP_SHMEM_SET
+    - OP_MOE_DISTRIBUTED_COMBINE_SEND
+    - OP_MOE_DISTRIBUTED_COMBINE_RECEIVE
+
+  UNSUPPORT_FP16_OPS:
+    - OP_MOD
+    - OP_MODS
+    - OP_REMRS
+    - OP_REMS
+    - OP_REM
+
+  UNSUPPORT_BF16_OPS:
+    - OP_EXP
+    - OP_RSQRT
+    - OP_SQRT
+    - OP_RELU
+    - OP_RECIPROCAL
+    - OP_ABS
+    - OP_LN
+    - OP_LOGICALNOT
+    - OP_TRIUL
+    - OP_REMRS
+    - OP_LOGICALAND
+    - OP_ADDS
+    - OP_SUBS
+    - OP_MULS
+    - OP_DIVS
+    - OP_REM
+    - OP_REMS
+    - OP_MAXS
+    - OP_MINS
+    - OP_S_ADDS
+    - OP_S_SUBS
+    - OP_S_MULS
+    - OP_S_DIVS
+    - OP_S_MAXS
+    - OP_S_MINS
+    - OP_NEG
+    - OP_ADD
+    - OP_SUB
+    - OP_MUL
+    - OP_DIV
+    - OP_MAXIMUM
+    - OP_MINIMUM
+    - OP_ADD_BRC
+    - OP_SUB_BRC
+    - OP_MUL_BRC
+    - OP_DIV_BRC
+    - OP_MAX_BRC
+    - OP_MIN_BRC
+    - OP_S_ADD
+    - OP_S_SUB
+    - OP_S_MUL
+    - OP_S_DIV
+    - OP_S_MAX
+    - OP_S_MIN
+    - OP_WHERE_TT
+    - OP_WHERE_TS
+    - OP_PRELU
+    - OP_WHERE_ST
+    - OP_WHERE_SS
+    - OP_ROWMAX
+    - OP_ROWSUM
+    - OP_ROWEXPMAX
+    - OP_ROWEXPSUM
+    - OP_ROWSUMLINE
+    - OP_ROWMAXLINE
+    - OP_ROWMINLINE
+    - OP_ROWMAX_SINGLE
+    - OP_ROWMIN_SINGLE
+    - OP_ROWSUM_SINGLE
+    - OP_ROWMAX_COMBINE_AXIS_SINGLE
+    - OP_SIGN
+    - OP_SIGNBIT
+    - OP_ROWSUM_COMBINE_AXIS_SINGLE
+    - OP_MOD
+    - OP_MODS
+    - OP_BITWISEAND
+    - OP_BITWISEOR
+    - OP_BITWISEXOR
+    - OP_BITWISEANDS
+    - OP_BITWISEORS
+    - OP_BITWISEXORS
+    - OP_EXPANDEXPDIF
+    - OP_BITWISENOT
+    - OP_BITWISERIGHTSHIFT
+    - OP_BITWISELEFTSHIFT
+    - OP_BITWISERIGHTSHIFTS
+    - OP_BITWISELEFTSHIFTS
+    - OP_SBITWISERIGHTSHIFT
+    - OP_SBITWISELEFTSHIFT
+    - OP_COPYSIGN
+    - OP_LRELU
+    - OP_ROWPROD_SINGLE
+    - OP_ROWPRODLINE
+
+  UNSUPPORT_BF16_ARCH35_OPS:
+    - OP_EXP
+    - OP_RSQRT
+    - OP_SQRT
+    - OP_RELU
+    - OP_ABS
+    - OP_LOGICALNOT
+    - OP_LOGICALAND
+    - OP_DIVS
+    - OP_DIV
+    - OP_EXPANDEXPDIF
+    - OP_ROWSUMLINE
+    - OP_ROWMAXLINE
+    - OP_ROWMINLINE
+    - OP_ROWMAX_SINGLE
+    - OP_REMRS
+    - OP_REM
+    - OP_ROWMIN_SINGLE
+    - OP_ROWSUM_SINGLE
+    - OP_MOD
+    - OP_MODS
+    - OP_PRELU
+    - OP_ROWPROD_SINGLE
+    - OP_ROWPRODLINE
+    - OP_REMS
+
+  LASTUSE_OPS:
+    - OP_ADD
+    - OP_SUB
+    - OP_MUL
+    - OP_DIV
+    - OP_ADDS
+    - OP_SUBS
+    - OP_MULS
+    - OP_MAXS
+    - OP_MINS
+    - OP_EXP
+    - OP_LRELU
+    - OP_BRCB
+    - OP_BITWISENOT
+    - OP_SORT
+    - OP_SQRT
+    - OP_RSQRT
+    - OP_RECIPROCAL
+    - OP_CONVERT
+    - OP_EXPAND
+    - OP_ROWEXPMAX
+    - OP_ROWMAX
+    - OP_ROWSUM
+    - OP_CAST
+    - OP_ROWSUM_SINGLE
+    - OP_ROWMAX_SINGLE
+    - OP_ROWMIN_SINGLE
+    - OP_DIVS
+    - OP_ABS
+    - OP_MAXIMUM
+    - OP_MINIMUM
+    - OP_BITWISEAND
+    - OP_BITWISEOR
+    - OP_BITWISEANDS
+    - OP_BITWISEORS
+    - OP_RELU
+    - OP_MODS
+    - OP_MOD
+    - OP_SIGN
+    - OP_PRELU
+    - OP_ROWPROD_SINGLE
+    - OP_SIGNBIT
+
+  SUPPORT_DYNAMIC_UNALIGNED_OPS:
+    - OP_RANGE
+    - OP_TRANSPOSE_VNCHWCONV
+    - OP_GATHER_ELEMENT
+    - OP_INDEX_ADD
+    - OP_CUM_SUM
+    - OP_TRIUL
+    - OP_COPY_IN
+    - OP_UB_COPY_IN
+    - OP_L1_COPY_IN
+    - OP_COPY_OUT
+    - OP_UB_COPY_OUT
+    - OP_L1_COPY_OUT
+    - OP_L0C_COPY_OUT
+    - OP_TRANSPOSE_MOVEOUT
+    - OP_INDEX_OUTCAST
+    - OP_ADD
+    - OP_SUB
+    - OP_MUL
+    - OP_DIV
+    - OP_EXP
+    - OP_EXP2
+    - OP_EXPM1
+    - OP_NEG
+    - OP_LN
+    - OP_HUB
+    - OP_ABS
+    - OP_RSQRT
+    - OP_RELU
+    - OP_LOG1P
+    - OP_CEIL
+    - OP_FLOOR
+    - OP_TRUNC
+    - OP_SQRT
+    - OP_RECIPROCAL
+    - OP_CAST
+    - OP_ISFINITE
+    - OP_ADDS
+    - OP_SUBS
+    - OP_MULS
+    - OP_DIVS
+    - OP_MAXS
+    - OP_MINS
+    - OP_PAD
+    - OP_PAIRMAX
+    - OP_PAIRSUM
+    - OP_ROWMAX_SINGLE
+    - OP_ROWSUM_SINGLE
+    - OP_EXPAND
+    - OP_VEC_DUP
+    - OP_MAXIMUM
+    - OP_MINIMUM
+    - OP_L1_TO_L0A
+    - OP_LOGICALNOT
+    - OP_LOGICALAND
+    - OP_ONEHOT
+    - OP_POW
+    - OP_INDEX_PUT
+    - OP_L1_TO_L0_BT
+    - OP_L1_TO_L0B
+    - OP_L1_TO_L0_AT
+    - OP_A_MUL_B
+    - OP_A_MULACC_B
+    - OP_A_MUL_BT
+    - OP_AT_MUL_B
+    - OP_AT_MUL_BT
+    - OP_WHERE_TT
+    - OP_WHERE_TS
+    - OP_WHERE_ST
+    - OP_WHERE_SS
+    - OP_ROWSUMLINE
+    - OP_ADD_BRC
+    - OP_SUB_BRC
+    - OP_MUL_BRC
+    - OP_DIV_BRC
+    - OP_MAX_BRC
+    - OP_MIN_BRC
+    - OP_GATHER
+    - OP_HYPOT
+    - OP_S_ADDS
+    - OP_LRELU
+    - OP_REM
+    - OP_REMS
+    - OP_REMRS
+    - OP_S_SUBS
+    - OP_S_DIVS
+    - OP_S_MULS
+    - OP_S_MAXS
+    - OP_S_MINS
+    - OP_ROUND
+    - OP_BITSORT
+    - OP_MRGSORT
+    - OP_CMP
+    - OP_CMPS
+    - OP_EXTRACT
+    - OP_PRELU
+    - OP_TILEDMRGSORT
+    - OP_ROWMAXLINE
+    - OP_PAIRMIN
+    - OP_ROWMIN_SINGLE
+    - OP_ROWMINLINE
+    - OP_TOPK_SORT
+    - OP_TOPK_MERGE
+    - OP_TOPK_EXTRACT
+    - OP_SCATTER_ELEMENT
+    - OP_SIGN
+    - OP_SIGNBIT
+    - OP_TRANSPOSE_MOVEIN
+    - OP_SORT
+    - OP_COMPARE_SWAP
+    - OP_MERGE
+    - OP_L0C_TO_L1
+    - OP_SCATTER
+    - OP_GATHER_FROM_UB
+    - OP_RESHAPE_COPY_IN
+    - OP_RESHAPE_COPY_OUT
+    - OP_L1_TO_FIX_QUANT_PRE
+    - OP_L1_TO_BT
+    - OP_BRCB
+    - OP_MOD
+    - OP_MODS
+    - OP_BITWISEAND
+    - OP_BITWISEOR
+    - OP_BITWISEXOR
+    - OP_BITWISEANDS
+    - OP_BITWISEORS
+    - OP_BITWISEXORS
+    - OP_EXPANDEXPDIF
+    - OP_BITWISENOT
+    - OP_BITWISERIGHTSHIFT
+    - OP_BITWISELEFTSHIFT
+    - OP_BITWISERIGHTSHIFTS
+    - OP_BITWISELEFTSHIFTS
+    - OP_SBITWISERIGHTSHIFT
+    - OP_SBITWISELEFTSHIFT
+    - OP_COPYSIGN
+    - OP_TWOTILEMRGSORT
+    - OP_EXTRACT_SINGLE
+    - OP_SORT_UB
+    - OP_GATHER_MASK
+    - OP_GATHER_MASK_BUILDIN
+    - OP_PAIRPROD
+    - OP_ROWPROD_SINGLE
+    - OP_ROWPRODLINE

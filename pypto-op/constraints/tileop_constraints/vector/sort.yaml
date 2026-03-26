@@ -1,0 +1,656 @@
+# Sort Operations: Sort, TopK, ArgSort, BitSort, MrgSort
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVectorSort()  OP_TOPK (line 305), OP_BITSORT (line 308),
+#                         OP_MRGSORT (line 311), OP_ARGSORT (line 314),
+#                         OP_SORT (line 336), OP_SORT_UB (line 330),
+#                         OP_TOPK_SORT (line 352), OP_TOPK_MERGE (line 355),
+#                         OP_TOPK_EXTRACT (line 358), OP_EXTRACT (line 317),
+#                         OP_COMPARE_SWAP (line 339), OP_MERGE (line 348),
+#                         OP_TILEDMRGSORT (line 320), OP_TWOTILEMRGSORT (line 324),
+#                         OP_EXTRACT_SINGLE (line 327)
+
+# =============================================================================
+# Primary Sort Operations
+# =============================================================================
+
+OP_SORT:
+  description: "并行排序（in-place排序，三输出缓冲区）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::Sort"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D连续（三缓冲区交换）"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+      - rule: "需要三个等大输出缓冲区"
+        severity: error
+        tileop_cause: "Sort使用三缓冲区交换实现"
+    recommended:
+      - scenario: "并行排序"
+        value: "输入对齐到256Bytes"
+        reasoning: "充分利用UB带宽，排序需要三倍缓冲区空间"
+  tags: [LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - in-place排序，有inplaceInfo属性
+    - 需要三个等大的输出缓冲区用于交换
+    - 有start_index属性控制起始位置
+    - 有order属性控制排序顺序（升序/降序）
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 配合COMPARE_SWAP和MERGE完成完整并行排序
+  source: "opcode.cpp:336 RegisterVectorSort"
+
+OP_TOPK:
+  description: "取TopK元素（使用MrgSort实现）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::MrgSort"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D连续（含索引）"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "TopK选择"
+        value: "输入对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有axis属性控制排序轴
+    - 有order属性控制排序顺序（升序/降序）
+    - 有kvalue属性控制K值
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:305 RegisterVectorSort"
+
+OP_ARGSORT:
+  description: "排序并返回索引（ArgSort）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::ArgSort"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D索引输出"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "ArgSort"
+        value: "输入对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有axis属性控制排序轴
+    - 有order属性控制排序顺序（升序/降序）
+    - 有kvalue属性控制K值
+    - 无TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:314 RegisterVectorSort"
+
+# =============================================================================
+# BitSort / MrgSort
+# =============================================================================
+
+OP_BITSORT:
+  description: "按位排序（BitSort，使用PIPE_S标量流水线）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::BitSort"
+  pipe: [PIPE_S, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D连续（含索引）"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "BitSort排序"
+        value: "输入对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 使用PIPE_S标量流水线（读取）和PIPE_V（写入）
+    - 有axis属性控制排序轴
+    - 有order属性控制排序顺序（升序/降序）
+    - 有offset属性控制偏移量
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:308 RegisterVectorSort"
+
+OP_MRGSORT:
+  description: "归并排序（MrgSort）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::MrgSort"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D连续（含索引）"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "归并排序"
+        value: "输入对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有axis属性控制排序轴
+    - 有mergeSize属性控制归并大小
+    - 有kvalue属性控制K值
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:311 RegisterVectorSort"
+
+# =============================================================================
+# Auxiliary Sort Operations (parallel sort building blocks)
+# =============================================================================
+
+OP_COMPARE_SWAP:
+  description: "比较并交换（并行排序原语）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::CompareAndSwap"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D连续（四缓冲区）"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended: []
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 并行排序的核心原语
+    - in-place操作，有inplaceInfo属性
+    - 有order属性控制排序顺序
+    - 需要四个等大缓冲区
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:339 RegisterVectorSort"
+
+OP_MERGE:
+  description: "归并（并行排序归并步骤）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::Merge"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input_left:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_right:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D连续（三缓冲区）"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended: []
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 并行排序归并步骤
+    - in-place操作，有inplaceInfo属性
+    - 有order属性控制排序顺序
+    - 有full_sort属性
+    - 需要三个等大输出缓冲区
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:348 RegisterVectorSort"
+
+OP_EXTRACT:
+  description: "提取排序结果（从BitSort/MrgSort中提取最终结果）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::Extract"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D连续"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输入大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended: []
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 从BitSort/MrgSort中提取最终排序结果
+    - 有kvalue属性控制提取K值
+    - 有order属性控制排序顺序
+    - 有makeMode属性控制提取模式
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:317 RegisterVectorSort"
+
+OP_SORT_UB:
+  description: "在UB中排序（数据从DDR到UB排序）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::SortUB"
+  pipe: [PIPE_S, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [MEM_DEVICE_DDR]
+      layout:
+        type: "连续存储"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: "32字节对齐"
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [MEM_DEVICE_DDR]
+      layout:
+        type: "连续存储"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: "32字节对齐"
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 数据在DDR上，排序在UB中完成，结果写回DDR
+    - 使用PIPE_S标量流水线（读取）和PIPE_V（写入）
+    - 有axis属性控制排序轴
+    - 有order属性控制排序顺序
+    - 无TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:330 RegisterVectorSort"

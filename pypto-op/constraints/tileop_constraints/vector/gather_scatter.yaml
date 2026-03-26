@@ -1,0 +1,676 @@
+# Gather/Scatter Operations: Random access with index tensors
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVector()  OP_GATHER (line 464), OP_GATHER_ELEMENT (line 467),
+#                     OP_GATHER_MASK (line 470), OP_GATHER_MASK_BUILDIN (line 473),
+#                     OP_SCATTER_ELEMENT (line 492), OP_SCATTER (line 496),
+#                     OP_SCATTER_UPDATE (line 505), OP_SCATTER_SCALAR (line 507)
+#   RegisterVector()  OP_GATHER_FROM_UB (line 461), OP_GATHER_IN_UB (line 552)
+
+# =============================================================================
+# Gather Operations
+# =============================================================================
+
+OP_GATHER:
+  description: "从DDR按索引收集元素到UB（支持任意索引访问模式）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::Tgather"
+  pipe: [PIPE_S, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [MEM_DEVICE_DDR]
+      layout:
+        type: "连续存储"
+        contiguous: true
+        max_dims: null
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: "32字节对齐"
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [MEM_DEVICE_DDR]
+      layout:
+        type: "1D索引张量"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: ["索引值范围不超过输入张量对应维度大小"]
+      alignment:
+        address: "32字节对齐"
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D输出"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输出大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector/MTE指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "随机访问"
+        value: "输出对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [GATHER_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 随机访问模式，无连续内存优势
+    - 输入在DDR，索引在DDR，输出到UB
+    - 使用PIPE_S和PIPE_MTE2流水线
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:464 RegisterVector"
+
+OP_GATHER_FROM_UB:
+  description: "从UB按索引收集元素到UB（源数据已在UB中）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::TgatherFromUB"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [UB]
+      layout:
+        type: "1D索引张量"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: ["索引值范围不超过输入张量对应维度大小"]
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "1D输出"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输出大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "UB内随机访问"
+        value: "输出对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 源数据已在UB中，避免DDR访问开销
+    - 有excludeBufferReuse标签，输出缓冲区不可复用
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:461 RegisterVector"
+
+OP_GATHER_ELEMENT:
+  description: "按元素索引从UB收集（支持动态非对齐）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::TgatherElement"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [UB]
+      layout:
+        type: "与输入同shape"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: ["索引值范围不超过输入张量对应维度大小"]
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与索引同shape"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输出大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "元素级随机访问"
+        value: "输出对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [GATHER_ELEMENT_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 元素级gather，索引shape与输入一致
+    - 有excludeBufferReuse标签，输出缓冲区不可复用
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS，支持动态非对齐场景
+  source: "opcode.cpp:467 RegisterVector"
+
+OP_GATHER_MASK:
+  description: "按掩码模式收集元素（通过patternMode控制模式）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::TgatherMask"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "掩码筛选后的紧凑布局"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输出大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "掩码收集"
+        value: "输出对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [GATHER_MASK_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 通过patternMode属性控制掩码模式
+    - 有excludeBufferReuse标签，输出缓冲区不可复用
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:470 RegisterVector"
+
+OP_GATHER_MASK_BUILDIN:
+  description: "内建掩码模式收集元素（patternMode控制，内建实现）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::TgatherMaskBuildIn"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "掩码筛选后的紧凑布局"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "输出大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "内建掩码收集"
+        value: "输出对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 通过patternMode属性控制掩码模式
+    - 与GATHER_MASK类似，但使用内建实现
+    - 有excludeBufferReuse标签，输出缓冲区不可复用
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:473 RegisterVector"
+
+# =============================================================================
+# Scatter Operations
+# =============================================================================
+
+OP_SCATTER:
+  description: "按索引将UB元素散布写入（三操作数：数据、索引、目标）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::Tscatter"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    data:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [UB]
+      layout:
+        type: "1D索引张量"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: ["索引值范围不超过目标张量对应维度大小"]
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    target:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "数据大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次写入的字节数为32的整数倍"
+    recommended:
+      - scenario: "散布写入"
+        value: "数据对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SCATTER_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 三操作数版本：数据、索引、目标张量
+    - 使用PIPE_S标量流水线
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:496 RegisterVector"
+
+OP_SCATTER_ELEMENT:
+  description: "按元素索引散布写入（元素级scatter）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::TscatterElementS"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    data:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [UB]
+      layout:
+        type: "与数据同shape"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: ["索引值范围不超过目标张量对应维度大小"]
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "数据大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次写入的字节数为32的整数倍"
+    recommended:
+      - scenario: "元素级散布"
+        value: "数据对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SCATTER_ELEMENT_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 元素级scatter，索引shape与数据一致
+    - 使用PIPE_S标量流水线
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:492 RegisterVector"
+
+OP_SCATTER_UPDATE:
+  description: "按索引更新目标张量（无TileOp实现，仅注册）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: null
+  pipe: null
+  dtype:
+    fp16: null
+    bf16: null
+    fp32: null
+    int8: null
+  operands:
+    data:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: null
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [UB]
+      layout:
+        type: "1D索引张量"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 仅注册，无TileOp实现
+    - 无TileShapeVerifier验证
+    - 核心类型为ANY，可能由上层pass分解
+  source: "opcode.cpp:505 RegisterVector"
+
+OP_SCATTER_SCALAR:
+  description: "按索引将标量值散布写入（无TileOp实现，仅注册）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: null
+  pipe: null
+  dtype:
+    fp16: null
+    bf16: null
+    fp32: null
+    int8: null
+  operands:
+    scalar:
+      mem_type: [UB]
+      layout:
+        type: "标量"
+        contiguous: true
+        max_dims: 0
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [UB]
+      layout:
+        type: "1D索引张量"
+        contiguous: true
+        max_dims: 1
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 仅注册，无TileOp实现
+    - 无TileShapeVerifier验证
+    - 核心类型为ANY，可能由上层pass分解
+  source: "opcode.cpp:507 RegisterVector"

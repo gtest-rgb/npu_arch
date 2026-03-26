@@ -1,0 +1,117 @@
+# View Operations: Pure metadata ops, no data movement
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCommon()  (lines 815-818)
+
+OP_VIEW:
+  description: "张量视图操作（纯元数据操作，创建共享底层数据的新视图）"
+  calc_type: MOVE_LOCAL
+  core_type: ANY
+  tileop: "VIEW"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: []
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 纯元数据操作，不移动数据
+    - 输入输出共享底层存储
+    - 不需要set_vec_tile_shapes
+  source: "opcode.cpp:815 RegisterCommon"
+
+OP_VIEW_TYPE:
+  description: "张量视图类型转换（纯元数据操作，仅改变数据类型视图）"
+  calc_type: MOVE_LOCAL
+  core_type: ANY
+  tileop: "VIEW_TYPE"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: []
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 纯元数据操作，不移动数据
+    - 仅改变数据的类型解释（如fp32视为两个int16）
+    - 不需要set_vec_tile_shapes
+  source: "opcode.cpp:817 RegisterCommon"

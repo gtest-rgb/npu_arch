@@ -1,0 +1,120 @@
+# Assemble Operations: Debug output and assembly
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCommon()  (lines 810-814)
+
+OP_ASSEMBLE:
+  description: "张量组装输出（调试用途，将Tile数据组装到GM）"
+  calc_type: MOVE_LOCAL
+  core_type: ANY
+  tileop: "ASSEMBLE"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [GM]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 调试用操作，将Tile计算结果组装到GM
+    - 属于IsOpCodeSupportMultiProducers集合（支持多生产者）
+    - 无TileShapeVerifier验证
+    - 不需要set_vec_tile_shapes
+  source: "opcode.cpp:810 RegisterCommon"
+
+OP_ASSEMBLE_SSA:
+  description: "张量组装输出SSA版本（带源数据引用的调试输出）"
+  calc_type: MOVE_OUT
+  core_type: ANY
+  tileop: "ASSEMBLE_SSA"
+  pipe: [PIPE_MTE3, PIPE_MTE3]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: [UB, GM]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [GM]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - SSA版本的assemble，使用MTE3流水线搬出数据
+    - 输入支持UB和GM混合类型
+    - 输出类型不限于GM
+    - 属于IsCopyOut集合
+    - 不需要set_vec_tile_shapes
+  source: "opcode.cpp:812 RegisterCommon"

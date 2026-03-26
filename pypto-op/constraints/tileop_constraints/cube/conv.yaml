@@ -1,0 +1,579 @@
+# Cube Convolution Operations: CONV and related ops on AIC
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCube()  (lines 622-638)
+#
+# Convolution ops are more complex than matmul due to ND->NZ format conversion,
+# weight layout (fractal Z), and multiple sub-operations in the pipeline.
+# The main CONV/CONV_ADD are high-level fused ops that internally manage
+# the full pipeline: CopyIn -> Load2D/Load3D -> MMAD -> Extract.
+#
+# Conv sub-ops handle individual stages:
+# - OP_L1_COPY_IN_CONV: GM -> L1 (feature map copy-in)
+# - OP_LOAD3D_CONV: L1 -> L0A (img2col / 3D weight loading)
+# - OP_LOAD2D_CONV: L1 -> L0B (2D weight loading)
+# - OP_CUBE_CONV_D2S: Depth-to-space format conversion
+# - OP_CUBE_CONCAT_C: L0C concatenation along C dimension
+
+# =============================================================================
+# OP_CONV: 2D Convolution (fused pipeline)
+# =============================================================================
+
+OP_CONV:
+  description: "二维卷积，融合完整pipeline（CopyIn -> Load -> MMAD -> Extract）"
+  calc_type: CONV
+  core_type: AIC
+  tileop: "CUBE_CONV"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: []  # 内部管理，不直接暴露mem_type
+      layout:
+        type: "ND格式 -> NZ格式（内部转换）"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_batch: 1
+        min_cin: 1
+        min_h: 1
+        min_w: 1
+    weight:
+      mem_type: []
+      layout:
+        type: "Fractal Z 格式"
+        contiguous: true
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_cout: 1
+        min_cin: 1
+        min_kh: 1
+        min_kw: 1
+    output:
+      mem_type: []
+      layout:
+        type: "ND格式（内部从NZ转换）"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576
+    l0b_size_bytes: 1048576
+    l0c_size_bytes: 2097152
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]，对应 (H*W) 维度"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]，对应 Cin 维度"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]，对应 Cout 维度"
+      - name: "enable_split_k"
+        type: "bool"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 整块搬运对齐要求"
+      - rule: "M (H*W) % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理，img2col后的M维对齐"
+      - rule: "K (Cin) % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度"
+      - rule: "N (Cout) % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB），img2col后的feature map tile"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB），weight tile"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量（A3: 2MB），输出固定 FP32"
+    recommended:
+      - scenario: "通用 FP16 Conv2D"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "与matmul相同的推荐起始值，根据实际feature map大小调整"
+  tags: []
+  notes: |
+    - 融合操作，内部管理完整pipeline：L1_COPY_IN_CONV -> LOAD3D_CONV/LOAD2D_CONV -> MMAD -> L0C_COPY_OUT_CONV
+    - 使用CONV专用属性：cin, cout, paddingLeft/Right, paddingTop/Bottom, strideh/stridew
+    - 额外属性：hposX, hsteP, wposX, wstep, hoffsetY, woffsetY（步进控制）
+    - 支持融合：reluType（ReLU激活）、hasBiasFlag（偏置）、eltMode（element-wise融合）
+    - hasQuantPreVector/hasQuantPostVector（量化前后处理）
+    - 不直接暴露mem_type，内部管理数据搬运
+    - TODO: verify exact dtype support from cube_pto.h
+  source: "opcode.cpp:622 RegisterCube"
+
+# =============================================================================
+# OP_CONV_ADD: 2D Convolution + Add (fused with residual)
+# =============================================================================
+
+OP_CONV_ADD:
+  description: "二维卷积+残差加法，融合CONV和element-wise add"
+  calc_type: CONV
+  core_type: AIC
+  tileop: "CUBE_CONV_ADD"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "ND格式 -> NZ格式（内部转换）"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_batch: 1
+        min_cin: 1
+        min_h: 1
+        min_w: 1
+    weight:
+      mem_type: []
+      layout:
+        type: "Fractal Z 格式"
+        contiguous: true
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+    residual:
+      mem_type: []
+      layout:
+        type: "ND格式"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+    output:
+      mem_type: []
+      layout:
+        type: "ND格式（内部从NZ转换）"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576
+    l0b_size_bytes: 1048576
+    l0c_size_bytes: 2097152
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]"
+      - name: "enable_split_k"
+        type: "bool"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 整块搬运对齐要求"
+      - rule: "M % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理"
+      - rule: "K % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度"
+      - rule: "N % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量（A3: 2MB），输出固定 FP32"
+    recommended:
+      - scenario: "通用 FP16 ResNet Block"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "与 OP_CONV 相同推荐值"
+  tags: []
+  notes: |
+    - 在 OP_CONV 基础上融合残差连接（shortcut add）
+    - 支持所有 OP_CONV 的属性
+    - eltBrcbFlag 属性控制 element-wise 融合模式
+    - TODO: verify exact dtype support from cube_pto.h
+  source: "opcode.cpp:624 RegisterCube"
+
+# =============================================================================
+# OP_CUBE_CONV_D2S: Depth-to-Space format conversion
+# =============================================================================
+
+OP_CUBE_CONV_D2S:
+  description: "Depth-to-Space格式转换（Cube侧）"
+  calc_type: CONV
+  core_type: AIC
+  tileop: "CUBE_CONV_D2S"
+  pipe: [PIPE_FIX, PIPE_FIX]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "ND格式"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+    output:
+      mem_type: []
+      layout:
+        type: "ND格式"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+  hardware:
+    block_size: 32
+  tile_shape: null
+  tags: []
+  notes: |
+    - 使用 PIPE_FIX 流水线（FixPipe），非 PIPE_M
+    - 用于 PixelShuffle / Sub-pixel Convolution 等场景
+    - 输入和输出的 mem_type 不直接暴露（内部管理）
+    - TODO: verify detailed constraints from cube_pto.h
+  source: "opcode.cpp:626 RegisterCube"
+
+# =============================================================================
+# OP_CUBE_CONCAT_C: Concatenate along C dimension (Cube side)
+# =============================================================================
+
+OP_CUBE_CONCAT_C:
+  description: "沿C维度拼接（Cube侧），在L0C/L1上操作"
+  calc_type: CONV
+  core_type: AIC
+  tileop: "CUBE_CONCAT_C"
+  pipe: [PIPE_MTE1, PIPE_FIX]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "ND格式"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+    output:
+      mem_type: []
+      layout:
+        type: "ND格式"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+  hardware:
+    block_size: 32
+  tile_shape: null
+  tags: []
+  notes: |
+    - 使用 PIPE_MTE1 + PIPE_FIX 混合流水线
+    - 用于 ResNet 等网络中的 skip connection 拼接
+    - TODO: verify detailed constraints from cube_pto.h
+  source: "opcode.cpp:628 RegisterCube"
+
+# =============================================================================
+# OP_L1_COPY_IN_CONV: GM -> L1 copy for convolution feature map
+# =============================================================================
+
+OP_L1_COPY_IN_CONV:
+  description: "卷积feature map从GM搬运到L1"
+  calc_type: MOVE_IN
+  core_type: AIC
+  tileop: "TileOp::L1CopyInConv"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND格式"
+        contiguous: false
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_elements: 1
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND格式"
+        contiguous: true
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+  hardware:
+    block_size: 32
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "搬运数据量不超过 L1 容量"
+        severity: error
+        tileop_cause: "L1 物理容量限制"
+    recommended:
+      - scenario: "通用场景"
+        value: "按 feature map 的 N*H*W 维度设置"
+        reasoning: "每次搬运一个完整的 feature map slice 到 L1"
+  tags: []
+  notes: |
+    - MTE2 流水线，负责将 feature map 从 GM 搬运到 L1
+    - 与通用 OP_L1_COPY_IN 的区别：针对 conv 的 ND 格式做了优化
+    - GM 首地址需要 32B 对齐
+    - 属于 IsCopyIn 操作
+  source: "opcode.cpp:630 RegisterCube"
+
+# =============================================================================
+# OP_LOAD3D_CONV: L1 -> L0A (img2col / 3D feature loading)
+# =============================================================================
+
+OP_LOAD3D_CONV:
+  description: "将L1中的feature map通过img2col方式加载到L0A"
+  calc_type: MOVE_LOCAL
+  core_type: AIC
+  tileop: "TileOp::TLoad3D"
+  pipe: [PIPE_MTE1, PIPE_MTE1]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L1]
+      layout:
+        type: "ND格式"
+        contiguous: true
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_elements: 1
+    output:
+      mem_type: [L0A]
+      layout:
+        type: "NZ格式（img2col展开后）"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "输出 NZ 格式 M 维 (H*W) % 16 == 0"
+        severity: error
+        tileop_cause: "BLOCK_CUBE_M_N=16，NZ 格式基本块大小"
+      - rule: "输出 NZ 格式 K 维 (Cin) % 16 == 0"
+        severity: error
+        tileop_cause: "L0A 加载粒度"
+      - rule: "输出数据量 <= L0A 容量"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB）"
+    recommended:
+      - scenario: "通用 Conv2D"
+        value: "M = ceil_align(H*W, 16), K = ceil_align(Cin, 16)"
+        reasoning: "img2col 后 M=H*W, K=Cin*Kh*Kw，需按 16 对齐"
+  tags: []
+  notes: |
+    - MTE1 流水线，L1 -> L0A
+    - 将 4D feature map [N, Cin, H, W] 通过 img2col 展开
+    - 展开 3x3 conv 时：M = H_out * W_out, K = Cin * Kh * Kw
+    - 展开后的数据以 NZ 格式存入 L0A
+    - OP_CONV pipeline 中的 feature map 加载阶段
+  source: "opcode.cpp:632 RegisterCube"
+
+# =============================================================================
+# OP_LOAD2D_CONV: L1 -> L0B (2D weight loading)
+# =============================================================================
+
+OP_LOAD2D_CONV:
+  description: "将L1中的weight加载到L0B"
+  calc_type: MOVE_LOCAL
+  core_type: AIC
+  tileop: "TileOp::Tload2D"
+  pipe: [PIPE_MTE1, PIPE_MTE1]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L1]
+      layout:
+        type: "Fractal Z 格式"
+        contiguous: true
+        max_dims: 4
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_elements: 1
+    output:
+      mem_type: [L0B]
+      layout:
+        type: "NZ格式"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+  hardware:
+    block_size: 32
+    base_block_k: 16
+    base_block_n: 16
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "输出 NZ 格式 K 维 (Cin*Kh*Kw) % 16 == 0"
+        severity: error
+        tileop_cause: "L0B 加载粒度"
+      - rule: "输出 NZ 格式 N 维 (Cout) % 16 == 0"
+        severity: error
+        tileop_cause: "BLOCK_CUBE_M_N=16，NZ 格式基本块大小"
+      - rule: "输出数据量 <= L0B 容量"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB）"
+    recommended:
+      - scenario: "通用 Conv2D"
+        value: "K = ceil_align(Cin*Kh*Kw, 16), N = ceil_align(Cout, 16)"
+        reasoning: "weight 展开后 K=Cin*Kh*Kw, N=Cout，需按 16 对齐"
+  tags: []
+  notes: |
+    - MTE1 流水线，L1 -> L0B
+    - 将 weight 从 Fractal Z 格式加载到 L0B 的 NZ 格式
+    - 输入 weight 在 L1 中以 Fractal Z 格式存储（由编译器/前端布局）
+    - OP_CONV pipeline 中的 weight 加载阶段
+  source: "opcode.cpp:634 RegisterCube"

@@ -1,0 +1,897 @@
+# Cube Matmul Operations: Matrix Multiply on AIC (Matrix Pipe)
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCube()  (lines 564-620)
+#
+# Cube ops use PIPE_M (Matrix pipe), operate on L0A/L0B/L0C buffers.
+# All matmul ops share the same TileOp::Tmad implementation with different
+# transpose and accumulate variants.
+#
+# Key differences from vector ops:
+# - core_type: AIC (not AIV)
+# - pipe: [PIPE_M, PIPE_M] (not PIPE_V)
+# - operands mem_type: L0A, L0B, L0C (not UB)
+# - tile_shape api: "set_cube_tile_shapes"
+# - Hardware: base_block_m/k/n = 16 (NZ format basic block)
+
+# =============================================================================
+# OP_A_MUL_B: C = A * B (no transpose, no accumulate)
+# =============================================================================
+
+OP_A_MUL_B:
+  description: "矩阵乘法 C = A * B，无转置，无累加"
+  calc_type: MATMUL
+  core_type: AIC
+  tileop: "TileOp::Tmad"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input_a:
+      mem_type: [L0A, L0AMX, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "stride[0] (M维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求，NZ格式行首地址32B对齐"
+          - dim: 1
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0A 硬件限制，MMAD 按行连续读取 K 维"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_k: 16
+        base_block_m: 16
+        base_block_k: 16
+    input_b:
+      mem_type: [L0B, L0BMX, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0B 硬件限制，MMAD 按行连续读取 K 维"
+          - dim: 1
+            constraint: "stride[1] (N维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求，NZ格式行首地址32B对齐"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_k: 16
+        min_n: 1
+        base_block_k: 16
+        base_block_n: 16
+    output:
+      mem_type: [L0C]
+      layout:
+        type: "NZ格式"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_n: 1
+        base_block_m: 16
+        base_block_n: 16
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576    # 1MB (A3 platform)
+    l0b_size_bytes: 1048576    # 1MB (A3 platform)
+    l0c_size_bytes: 2097152    # 2MB (A3 platform)
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]，L0和L1维度的M大小"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]，L0和L1维度的K大小"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]，L0和L1维度的N大小"
+      - name: "enable_split_k"
+        type: "bool"
+        description: "是否启用K维拆分"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 是整块搬运，必须对齐才能完整搬运"
+      - rule: "M % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理，M 维必须是 base_block_m 的整数倍"
+      - rule: "K % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度，K 维必须是 base_block_k 的整数倍"
+      - rule: "N % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度，N 维必须是 base_block_n 的整数倍"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0A 按行存储需 32B 对齐"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0B 按行存储需 32B 对齐"
+      - rule: "INT8 时 M/K/N 对齐到 32 元素"
+        severity: error
+        tileop_cause: "INT8 的 BLOCK_NELEM=32，NZ 基本块为 32x32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量限制（A3: 1MB），输入A的 L0 tile 必须完整放入 L0A"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量限制（A3: 1MB），输入B的 L0 tile 必须完整放入 L0B"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量限制（A3: 2MB），输出固定 FP32 累积，L0 tile 必须完整放入 L0C"
+    recommended:
+      - scenario: "通用 FP16"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "L0A=128*64*2=16KB, L0B=256*64*2=32KB, L0C=128*256*4=128KB，均在容量内"
+      - scenario: "大 M 场景"
+        value: "M=[256,256], K=[64,256], N=[128,128]"
+        reasoning: "增大 mL0 提高计算密度，L0C=256*128*4=128KB"
+      - scenario: "大 K 场景"
+        value: "M=[128,128], K=[128,512], N=[128,128]"
+        reasoning: "增大 kL0/kL1 减少 K 维循环次数"
+      - scenario: "INT8 量化"
+        value: "M=[128,128], K=[64,256], N=[128,256]"
+        reasoning: "注意 32 元素对齐，L0A=128*64*1=8KB"
+      - scenario: "小模型"
+        value: "M=[64,64], K=[32,128], N=[128,128]"
+        reasoning: "节省 buffer，适合多 OP 共存场景"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 输入A必须通过MTE从L1加载到L0A（OP_L1_TO_L0A）
+    - 输入B必须通过MTE从L1加载到L0B（OP_L1_TO_L0B）
+    - 输出结果在L0C中，需通过OP_L0C_COPY_OUT搬出到L1/GM
+    - K维度在所有dtype下必须16对齐（base_block_k=16）
+    - NZ格式外轴16元素对齐
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:597 RegisterCube"
+
+# =============================================================================
+# OP_A_MULACC_B: C += A * B (no transpose, with accumulate)
+# =============================================================================
+
+OP_A_MULACC_B:
+  description: "矩阵乘累加 C += A * B，无转置"
+  calc_type: MATMUL
+  core_type: AIC
+  tileop: "TileOp::Tmad"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input_a:
+      mem_type: [L0A, L0AMX, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "stride[0] (M维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+          - dim: 1
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0A 硬件限制"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_k: 16
+        base_block_m: 16
+        base_block_k: 16
+    input_b:
+      mem_type: [L0B, L0BMX, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0B 硬件限制"
+          - dim: 1
+            constraint: "stride[1] (N维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_k: 16
+        min_n: 1
+        base_block_k: 16
+        base_block_n: 16
+    output:
+      mem_type: [L0C]
+      layout:
+        type: "NZ格式"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_n: 1
+        base_block_m: 16
+        base_block_n: 16
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576
+    l0b_size_bytes: 1048576
+    l0c_size_bytes: 2097152
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]"
+      - name: "enable_split_k"
+        type: "bool"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 整块搬运对齐要求"
+      - rule: "M % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理"
+      - rule: "K % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度"
+      - rule: "N % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0A 行存储 32B 对齐"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0B 行存储 32B 对齐"
+      - rule: "INT8 时 M/K/N 对齐到 32 元素"
+        severity: error
+        tileop_cause: "INT8 BLOCK_NELEM=32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量（A3: 2MB），输出固定 FP32"
+    recommended:
+      - scenario: "通用 FP16"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "与 OP_A_MUL_B 相同，L0A=16KB, L0B=32KB, L0C=128KB"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 与 OP_A_MUL_B 共享相同的 TileOp::Tmad 实现
+    - 区别：输出 C 是累加模式（C += A*B），需预先将偏置或前一步结果写入 L0C
+    - 额外接受 L0C 作为输入（已有累积值）
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:601 RegisterCube"
+
+# =============================================================================
+# OP_A_MUL_BT: C = A * B^T (B transposed, no accumulate)
+# =============================================================================
+
+OP_A_MUL_BT:
+  description: "矩阵乘法 C = A * B^T，B转置，无累加"
+  calc_type: MATMUL
+  core_type: AIC
+  tileop: "TileOp::Tmad"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input_a:
+      mem_type: [L0A, L0B, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "stride[0] (M维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+          - dim: 1
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0A 硬件限制"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_k: 16
+        base_block_m: 16
+        base_block_k: 16
+    input_b:
+      mem_type: [L0B, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式（转置加载）"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0B 硬件限制"
+          - dim: 1
+            constraint: "stride[1] (N维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_k: 16
+        min_n: 1
+        base_block_k: 16
+        base_block_n: 16
+    output:
+      mem_type: [L0C]
+      layout:
+        type: "NZ格式"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_n: 1
+        base_block_m: 16
+        base_block_n: 16
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576
+    l0b_size_bytes: 1048576
+    l0c_size_bytes: 2097152
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]"
+      - name: "enable_split_k"
+        type: "bool"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 整块搬运对齐要求"
+      - rule: "M % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理"
+      - rule: "K % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度"
+      - rule: "N % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0A 行存储 32B 对齐"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0B 行存储 32B 对齐"
+      - rule: "INT8 时 M/K/N 对齐到 32 元素"
+        severity: error
+        tileop_cause: "INT8 BLOCK_NELEM=32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量（A3: 2MB），输出固定 FP32"
+    recommended:
+      - scenario: "通用 FP16"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "与 OP_A_MUL_B 相同的推荐值"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - B 矩阵在加载时进行转置（B^T），使用 OP_L1_TO_L0_BT 加载
+    - 不接受 L0C 作为输入（无累加）
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:605 RegisterCube"
+
+# =============================================================================
+# OP_A_MULACC_BT: C += A * B^T (B transposed, with accumulate)
+# =============================================================================
+
+OP_A_MULACC_BT:
+  description: "矩阵乘累加 C += A * B^T，B转置"
+  calc_type: MATMUL
+  core_type: AIC
+  tileop: "TileOp::Tmad"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input_a:
+      mem_type: [L0A, L0B, L0C, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "stride[0] (M维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+          - dim: 1
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0A 硬件限制"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_k: 16
+        base_block_m: 16
+        base_block_k: 16
+    input_b:
+      mem_type: [L0B, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式（转置加载）"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0B 硬件限制"
+          - dim: 1
+            constraint: "stride[1] (N维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_k: 16
+        min_n: 1
+        base_block_k: 16
+        base_block_n: 16
+    output:
+      mem_type: [L0C]
+      layout:
+        type: "NZ格式"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_n: 1
+        base_block_m: 16
+        base_block_n: 16
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576
+    l0b_size_bytes: 1048576
+    l0c_size_bytes: 2097152
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]"
+      - name: "enable_split_k"
+        type: "bool"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 整块搬运对齐要求"
+      - rule: "M % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理"
+      - rule: "K % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度"
+      - rule: "N % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0A 行存储 32B 对齐"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0B 行存储 32B 对齐"
+      - rule: "INT8 时 M/K/N 对齐到 32 元素"
+        severity: error
+        tileop_cause: "INT8 BLOCK_NELEM=32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量（A3: 2MB），输出固定 FP32"
+    recommended:
+      - scenario: "通用 FP16"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "与 OP_A_MUL_B 相同的推荐值"
+  tags: []
+  notes: |
+    - B 矩阵转置加载 + 累加模式
+    - 接受 L0C 作为输入（已有累积值）
+    - 使用 OP_L1_TO_L0_BT 加载转置的 B 矩阵
+    - 不在SUPPORT_DYNAMIC_UNALIGNED_OPS中
+  source: "opcode.cpp:609 RegisterCube"
+
+# =============================================================================
+# OP_AT_MUL_B: C = A^T * B (A transposed, no accumulate)
+# =============================================================================
+
+OP_AT_MUL_B:
+  description: "矩阵乘法 C = A^T * B，A转置，无累加"
+  calc_type: MATMUL
+  core_type: AIC
+  tileop: "TileOp::Tmad"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input_a:
+      mem_type: [L0A, L0B, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式（转置加载）"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "stride[0] (M维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+          - dim: 1
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0A 硬件限制"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_k: 16
+        base_block_m: 16
+        base_block_k: 16
+    input_b:
+      mem_type: [L0B, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0B 硬件限制"
+          - dim: 1
+            constraint: "stride[1] (N维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_k: 16
+        min_n: 1
+        base_block_k: 16
+        base_block_n: 16
+    output:
+      mem_type: [L0C]
+      layout:
+        type: "NZ格式"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_n: 1
+        base_block_m: 16
+        base_block_n: 16
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576
+    l0b_size_bytes: 1048576
+    l0c_size_bytes: 2097152
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]"
+      - name: "enable_split_k"
+        type: "bool"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 整块搬运对齐要求"
+      - rule: "M % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理"
+      - rule: "K % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度"
+      - rule: "N % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0A 行存储 32B 对齐"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0B 行存储 32B 对齐"
+      - rule: "INT8 时 M/K/N 对齐到 32 元素"
+        severity: error
+        tileop_cause: "INT8 BLOCK_NELEM=32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量（A3: 2MB），输出固定 FP32"
+    recommended:
+      - scenario: "通用 FP16"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "与 OP_A_MUL_B 相同的推荐值"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - A 矩阵在加载时进行转置（A^T），使用 OP_L1_TO_L0_AT 加载
+    - 不接受 L0C 作为输入（无累加）
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:613 RegisterCube"
+
+# =============================================================================
+# OP_AT_MUL_BT: C = A^T * B^T (both transposed, no accumulate)
+# =============================================================================
+
+OP_AT_MUL_BT:
+  description: "矩阵乘法 C = A^T * B^T，A和B均转置，无累加"
+  calc_type: MATMUL
+  core_type: AIC
+  tileop: "TileOp::Tmad"
+  pipe: [PIPE_M, PIPE_M]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input_a:
+      mem_type: [L0A, L0B, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式（转置加载）"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "stride[0] (M维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+          - dim: 1
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0A 硬件限制"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_k: 16
+        base_block_m: 16
+        base_block_k: 16
+    input_b:
+      mem_type: [L0B, GM, BT, FIX_QUANT_PRE]
+      layout:
+        type: "NZ格式（转置加载）"
+        contiguous: false
+        max_dims: 2
+      stride:
+        required: true
+        constraints:
+          - dim: 0
+            constraint: "K 维必须连续存储，不允许 stride"
+            reason: "L0B 硬件限制"
+          - dim: 1
+            constraint: "stride[1] (N维) 必须是 32B 的整数倍"
+            reason: "MTE2 加载要求"
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_k: 16
+        min_n: 1
+        base_block_k: 16
+        base_block_n: 16
+    output:
+      mem_type: [L0C]
+      layout:
+        type: "NZ格式"
+        contiguous: true
+        max_dims: 2
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: "首地址"
+      shape:
+        min_m: 1
+        min_n: 1
+        base_block_m: 16
+        base_block_n: 16
+  hardware:
+    block_size: 32
+    base_block_m: 16
+    base_block_k: 16
+    base_block_n: 16
+    l0a_size_bytes: 1048576
+    l0b_size_bytes: 1048576
+    l0c_size_bytes: 2097152
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    api_params:
+      - name: "m"
+        type: "list[int]"
+        description: "[mL0, mL1]"
+      - name: "k"
+        type: "list[int]"
+        description: "[kL0, kL1, kL1b]"
+      - name: "n"
+        type: "list[int]"
+        description: "[nL0, nL1]"
+      - name: "enable_split_k"
+        type: "bool"
+        default: false
+    constraints:
+      - rule: "L0 <= L1 且 L1 % L0 == 0"
+        severity: error
+        tileop_cause: "L1 -> L0 整块搬运对齐要求"
+      - rule: "M % base_block_m(16) == 0"
+        severity: error
+        tileop_cause: "MMAD 按 16x16 block 处理"
+      - rule: "K % base_block_k(16) == 0"
+        severity: error
+        tileop_cause: "L0A/L0B 加载粒度"
+      - rule: "N % base_block_n(16) == 0"
+        severity: error
+        tileop_cause: "L0C 输出粒度"
+      - rule: "kL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0A 行存储 32B 对齐"
+      - rule: "nL0 * sizeof(dtype) % 32 == 0"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，L0B 行存储 32B 对齐"
+      - rule: "INT8 时 M/K/N 对齐到 32 元素"
+        severity: error
+        tileop_cause: "INT8 BLOCK_NELEM=32"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0A_size"
+        severity: error
+        tileop_cause: "L0A 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(nL0,16) * CeilAlign(kL0,16) * sizeof(dtype) <= L0B_size"
+        severity: error
+        tileop_cause: "L0B 物理容量（A3: 1MB）"
+      - rule: "CeilAlign(mL0,16) * CeilAlign(nL0,16) * 4 <= L0C_size"
+        severity: error
+        tileop_cause: "L0C 物理容量（A3: 2MB），输出固定 FP32"
+    recommended:
+      - scenario: "通用 FP16"
+        value: "M=[128,128], K=[64,256], N=[256,256]"
+        reasoning: "与 OP_A_MUL_B 相同的推荐值"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - A 和 B 矩阵均在加载时进行转置
+    - A 使用 OP_L1_TO_L0_AT，B 使用 OP_L1_TO_L0_BT
+    - 不接受 L0C 作为输入（无累加）
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:617 RegisterCube"

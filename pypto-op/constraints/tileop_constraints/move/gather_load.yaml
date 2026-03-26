@@ -1,0 +1,86 @@
+# Gather/Load Operations: GM -> UB gather-load (distinct from CopyIn GM->L1)
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVector()  OP_LOAD  (line 555)
+
+OP_LOAD:
+  description: "GM到UB的Gather-Load操作（带偏移量的间接搬入）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::Load"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    src_data:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    offset_index:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints:
+      - rule: "输出大小 <= UB容量"
+        severity: error
+        tileop_cause: "UB物理容量限制"
+    recommended:
+      - scenario: "MoE专家数据加载"
+        value: "根据专家大小动态设置"
+        reasoning: "典型场景为MoE gather-load专家权重"
+  tags: []
+  notes: |
+    - GM -> UB的间接搬入（gather-load），使用UB中的偏移量索引从GM加载数据
+    - 与OP_COPY_IN不同：COPY_IN是连续/规则搬运，LOAD是带偏移量的间接搬运
+    - 与OP_GATHER_IN_UB不同：GATHER_IN_UB有3个GM输入（data+indices+offsets），LOAD有2个输入（GM data + UB offsets）
+    - 使用PIPE_S标量流水线
+    - 典型使用场景：MoE专家权重按token动态加载
+  source: "opcode.cpp:555 RegisterVector"

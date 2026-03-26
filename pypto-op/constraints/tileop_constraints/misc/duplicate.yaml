@@ -1,0 +1,129 @@
+# Duplicate Operations: Tensor duplication
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCommon()  OP_DUPLICATE (line 800)
+#   RegisterVector()  OP_VEC_DUP (line 522)
+
+OP_DUPLICATE:
+  description: "张量全量复制（框架级复制，无TileOp实现）"
+  calc_type: MOVE_LOCAL
+  core_type: ANY
+  tileop: null
+  pipe: []
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [GM]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 框架级复制操作，无TileOp实现
+    - 输出到GM（DDR）
+    - 不需要set_vec_tile_shapes
+  source: "opcode.cpp:800 RegisterCommon"
+
+OP_VEC_DUP:
+  description: "向量重复复制（在UB中复制张量数据）"
+  calc_type: OTHER
+  core_type: AIV
+  tileop: "TileOp::Tduplicate"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持scalar、dynScalar、shape属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 使用DUP_REPEAT_STRIDE_MAX=4095
+  source: "opcode.cpp:522 RegisterVector"

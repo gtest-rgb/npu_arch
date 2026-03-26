@@ -1,0 +1,157 @@
+# Expand Operations: Tensor expansion
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVector()  OP_EXPAND (line 446)
+#   RegisterVectorBinary()  OP_EXPANDEXPDIF (line 238)
+
+OP_EXPAND:
+  description: "张量广播扩展（沿指定维度复制数据）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Texpand"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNARY_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持EXPANDDIM属性控制扩展维度
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 在UNARY_OPS集合中
+    - 属于LASTUSE_OPS
+  source: "opcode.cpp:446 RegisterVector"
+
+OP_EXPANDEXPDIF:
+  description: "张量逐元素扩展指数差运算 x * exp(y - x)"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::TExpandExpDif"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通常计算"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 在BINARY_OPS集合中
+    - 在UNSUPPORT_BF16_OPS中，不支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:238 RegisterVectorBinary"

@@ -1,0 +1,468 @@
+# Local Move Operations: data transfer within on-chip memory (L1<->UB, L0C->UB, UB->UB, L1->L1)
+# calc_type: MOVE_LOCAL, MOVE_OUT, MOVE_IN, or ELMWISE
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCube()   OP_L1_COPY_UB, OP_L0C_COPY_UB, OP_UB_COPY_L1, OP_UB_COPY_L1_ND,
+#                   OP_L1_TO_L1, OP_L0C_TO_L1, OP_UB_COPY_ND2NZ  (lines 704-722)
+#   RegisterVector() OP_COPY_UB_TO_UB  (line 714)
+
+# =============================================================================
+# L1 <-> UB cross-boundary moves
+# =============================================================================
+
+OP_L1_COPY_UB:
+  description: "L1到UB的数据搬运（FIX pipe）"
+  calc_type: MOVE_OUT
+  core_type: AIC
+  tileop: "TileOp::L1CopyUB"
+  pipe: [PIPE_FIX, PIPE_FIX]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints:
+      - rule: "总字节数 <= UB容量"
+        severity: error
+        tileop_cause: "UB物理容量限制"
+    recommended:
+      - scenario: "Cube结果搬运到UB"
+        value: "控制在UB容量内"
+        reasoning: "L1数据搬运到UB供Vector计算使用"
+  tags: [CROSS_L1_UB_OPS]
+  notes: |
+    - L1 -> UB搬运，用于Cube结果传递给Vector计算
+    - 属于CROSS_L1_UB_OPS
+  source: "opcode.cpp:704 RegisterCube"
+
+OP_L0C_COPY_UB:
+  description: "L0C到UB的数据搬运（FIX pipe）"
+  calc_type: MOVE_OUT
+  core_type: AIC
+  tileop: "TileOp::L0CCopyUB"
+  pipe: [PIPE_FIX, PIPE_FIX]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L0C]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints:
+      - rule: "总字节数 <= UB容量"
+        severity: error
+        tileop_cause: "UB物理容量限制"
+    recommended:
+      - scenario: "Cube结果搬运到UB"
+        value: "控制在UB容量内"
+        reasoning: "L0C计算结果直接搬运到UB供Vector使用"
+  tags: [CROSS_L1_UB_OPS]
+  notes: |
+    - L0C -> UB搬运，Cube计算结果直接传递给Vector
+    - 属于CROSS_L1_UB_OPS
+  source: "opcode.cpp:706 RegisterCube"
+
+OP_UB_COPY_L1:
+  description: "UB到L1的数据搬运（MTE3 DMA）"
+  calc_type: MOVE_IN
+  core_type: AIV
+  tileop: "TileOp::UBCopyL1"
+  pipe: [PIPE_MTE3, PIPE_MTE3]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints:
+      - rule: "总字节数 <= L1容量"
+        severity: error
+        tileop_cause: "L1物理容量限制"
+    recommended:
+      - scenario: "Vector结果搬运到L1"
+        value: "控制在L1容量内"
+        reasoning: "UB数据搬运到L1供Cube计算使用"
+  tags: [CROSS_L1_UB_OPS]
+  notes: |
+    - UB -> L1搬运，用于Vector结果传递给Cube
+    - 属于CROSS_L1_UB_OPS
+  source: "opcode.cpp:708 RegisterCube"
+
+OP_UB_COPY_L1_ND:
+  description: "UB到L1的ND格式数据搬运（MTE3 DMA，非连续）"
+  calc_type: MOVE_IN
+  core_type: AIV
+  tileop: "TileOp::UBCopyL1ND"
+  pipe: [PIPE_MTE3, PIPE_MTE3]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints:
+      - rule: "总字节数 <= L1容量"
+        severity: error
+        tileop_cause: "L1物理容量限制"
+    recommended:
+      - scenario: "非连续数据搬运到L1"
+        value: "控制在L1容量内"
+        reasoning: "支持非连续ND格式搬运"
+  tags: [CROSS_L1_UB_OPS]
+  notes: |
+    - UB -> L1搬运，支持非连续ND格式
+    - 属于CROSS_L1_UB_OPS
+  source: "opcode.cpp:710 RegisterCube"
+
+# =============================================================================
+# Same-memory moves
+# =============================================================================
+
+OP_COPY_UB_TO_UB:
+  description: "UB到UB的数据拷贝（Vector pipe）"
+  calc_type: MOVE_LOCAL
+  core_type: AIV
+  tileop: "TileOp::Tvcopy"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "通用拷贝"
+        value: "末尾轴对齐到256Bytes"
+        reasoning: "充分利用UB带宽"
+  tags: [UNARY_OPS]
+  notes: |
+    - UB内部数据拷贝，使用Vector指令
+    - 有excludeBufferReuse属性，输出缓冲区不可复用
+    - 属于UNARY_OPS集合
+  source: "opcode.cpp:714 RegisterCube"
+
+OP_L1_TO_L1:
+  description: "L1到L1的数据拷贝（MTE1 DMA）"
+  calc_type: MOVE_LOCAL
+  core_type: AIC
+  tileop: "TileOp::L1CopyL1"
+  pipe: [PIPE_MTE1, PIPE_MTE1]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints:
+      - rule: "总字节数 <= L1容量"
+        severity: error
+        tileop_cause: "L1物理容量限制"
+    recommended:
+      - scenario: "L1内部数据重排"
+        value: "控制在L1容量内"
+        reasoning: "L1内部拷贝或重排"
+  tags: [UNARY_OPS]
+  notes: |
+    - L1内部数据拷贝，使用MTE1 DMA
+    - 属于UNARY_OPS集合
+  source: "opcode.cpp:712 RegisterCube"
+
+# =============================================================================
+# UB layout transform (PIPE_V, AIV)
+# =============================================================================
+
+OP_UB_COPY_ND2NZ:
+  description: "UB内ND到NZ格式的数据拷贝（Vector pipe）"
+  calc_type: MOVE_LOCAL
+  core_type: AIV
+  tileop: "TileOp::UBCopyUB"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "NZ"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴大小 * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector指令要求每次读取的字节数为32的整数倍"
+    recommended:
+      - scenario: "ND到NZ转换"
+        value: "末尾轴C0对齐到16(fp16/bf16)"
+        reasoning: "ND->NZ布局转换，C0为基本block大小"
+  tags: []
+  notes: |
+    - UB内部ND到NZ格式转换
+    - 使用Vector指令进行布局转换
+  source: "opcode.cpp:721 RegisterCube"

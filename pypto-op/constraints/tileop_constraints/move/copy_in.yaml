@@ -1,0 +1,1116 @@
+# CopyIn Operations: GM -> L1/UB/L0A/L0B (calc_type=MOVE_IN or MOVE_LOCAL)
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCommon()       OP_COPY_IN, OP_RESHAPE_COPY_IN  (lines 820, 804)
+#   RegisterVector()       OP_UB_COPY_IN, OP_TRANSPOSE_MOVEIN, OP_GATHER_IN_UB  (lines 525, 436, 552)
+#   RegisterCube()         OP_L1_COPY_IN, OP_L1_COPY_IN_FRACTAL_Z, OP_L1_COPY_IN_DMA,
+#                          OP_L1_COPY_IN_A_SCALE, OP_L1_COPY_IN_B_SCALE,
+#                          OP_L1_TO_L0A, OP_L1_TO_L0B, OP_L1_TO_L0_AT, OP_L1_TO_L0_BT,
+#                          OP_L1_COPY_IN_CONV, OP_GATHER_IN_L1  (lines 657-733)
+#   RegisterDistribute()  OP_SHMEM_GET_GM2UB  (line 765)
+
+# =============================================================================
+# GM -> UB (PIPE_MTE2, AIV)
+# =============================================================================
+
+OP_COPY_IN:
+  description: "GM到任意目标存储的通用数据搬入，由pass层决定具体TileOp"
+  calc_type: MOVE_IN
+  core_type: ANY
+  tileop: null
+  pipe: []
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐（ND格式）"
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [GM, L1, UB, L0A, L0B, L0C]
+      layout:
+        type: "由pass层决定"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+      int8: 32
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE按32B block搬运"
+      - rule: "内轴大小 <= 65535"
+        severity: error
+        tileop_cause: "ND格式内轴最大值"
+    recommended:
+      - scenario: "通用计算"
+        value: "末尾轴C0对齐到32B，外轴尽量大以减少搬运次数"
+        reasoning: "充分利用MTE带宽"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 通用CopyIn，无具体TileOp实现，由pass层展开为具体操作
+    - 有outputCombineAxis和excludeBufferReuse属性
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:820 RegisterCommon"
+
+OP_UB_COPY_IN:
+  description: "GM到UB的数据搬入（MTE2 DMA）"
+  calc_type: MOVE_IN
+  core_type: AIV
+  tileop: "TileOp::UBCopyIn"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND/NZ"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致或NZ"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+      int8: 32
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+      - rule: "内轴大小 <= 65535"
+        severity: error
+        tileop_cause: "ND格式内轴最大值"
+      - rule: "总字节数 <= UB容量"
+        severity: error
+        tileop_cause: "UB物理容量限制"
+    recommended:
+      - scenario: "通用计算"
+        value: "末尾轴对齐到32B，整体大小不超过UB容量"
+        reasoning: "MTE2 DMA搬运，最小粒度32B"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - GM -> UB直接DMA搬运
+    - 有excludeBufferReuse属性，输出缓冲区不可复用
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:525 RegisterVector"
+
+# =============================================================================
+# GM -> L1 (PIPE_MTE2, AIC)
+# =============================================================================
+
+OP_L1_COPY_IN:
+  description: "GM到L1的数据搬入（MTE2 DMA）"
+  calc_type: MOVE_IN
+  core_type: AIC
+  tileop: "TileOp::L1CopyIn"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND/NZ"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "与输入一致"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+      int8: 32
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+      - rule: "内轴大小 <= 65535"
+        severity: error
+        tileop_cause: "ND格式内轴最大值"
+    recommended:
+      - scenario: "Cube计算前搬运"
+        value: "末尾轴C0对齐到16(fp16/bf16)或8(fp32)"
+        reasoning: "配合L1->L0A/L0B搬运，C0需匹配Cube base_block"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - GM -> L1 DMA搬运，用于Cube流水线
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:657 RegisterCube"
+
+OP_L1_COPY_IN_FRACTAL_Z:
+  description: "GM到L1的FractalZ格式数据搬入（MTE2 DMA）"
+  calc_type: MOVE_IN
+  core_type: AIC
+  tileop: "TileOp::L1CopyInFractalZ"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "FractalZ"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "FractalZ"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+      - rule: "内轴大小 <= 65535"
+        severity: error
+        tileop_cause: "ND格式内轴最大值"
+    recommended:
+      - scenario: "Cube计算前搬运"
+        value: "末尾轴C0对齐到16(fp16/bf16)或8(fp32)"
+        reasoning: "FractalZ布局，C0为基本搬运单位"
+  tags: []
+  notes: |
+    - 专用于FractalZ格式布局的GM->L1搬运
+    - 有fmapC0属性（ConvOpAttributeKey）
+  source: "opcode.cpp:659 RegisterCube"
+
+OP_L1_COPY_IN_DMA:
+  description: "GM到L1的DMA数据搬入（MTE2 DMA，无FractalZ约束）"
+  calc_type: MOVE_IN
+  core_type: AIC
+  tileop: "TileOp::L1CopyInDMA"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+      int8: 32
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+      - rule: "内轴大小 <= 65535"
+        severity: error
+        tileop_cause: "ND格式内轴最大值"
+    recommended:
+      - scenario: "通用L1搬运"
+        value: "末尾轴C0对齐到32B"
+        reasoning: "纯DMA搬运，无布局转换开销"
+  tags: []
+  notes: |
+    - 通用GM->L1 DMA搬运，无FractalZ布局约束
+  source: "opcode.cpp:666 RegisterCube"
+
+OP_L1_COPY_IN_CONV:
+  description: "GM到L1的数据搬入（卷积专用，MTE2 DMA）"
+  calc_type: MOVE_IN
+  core_type: AIC
+  tileop: "TileOp::L1CopyInConv"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+    recommended:
+      - scenario: "卷积计算前搬运"
+        value: "C0对齐到16(fp16/bf16)，配合LOAD3D/LOAD2D"
+        reasoning: "卷积专用的featurmap搬运"
+  tags: []
+  notes: |
+    - 卷积专用GM->L1搬运
+    - 有TileShapeVerifier验证
+  source: "opcode.cpp:630 RegisterCube"
+
+# =============================================================================
+# L1 -> L0A/L0B (PIPE_MTE1, AIC, calc_type=MOVE_LOCAL)
+# =============================================================================
+
+OP_L1_TO_L0A:
+  description: "L1到L0A的数据搬入（MTE1 DMA）"
+  calc_type: MOVE_LOCAL
+  core_type: AIC
+  tileop: "TileOp::L1ToL0A"
+  pipe: [PIPE_MTE1, PIPE_MTE1]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L0A]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE1按32B block搬运"
+      - rule: "总字节数 <= L0A容量"
+        severity: error
+        tileop_cause: "L0A物理容量限制（通常16KB）"
+    recommended:
+      - scenario: "Cube MatMul A矩阵搬运"
+        value: "mL0对齐到16，kL0对齐到16"
+        reasoning: "L0A按行存储，需匹配Cube base_block"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - L1 -> L0A搬运，用于Cube MatMul的A矩阵
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:671 RegisterCube"
+
+OP_L1_TO_L0B:
+  description: "L1到L0B的数据搬入（MTE1 DMA）"
+  calc_type: MOVE_LOCAL
+  core_type: AIC
+  tileop: "TileOp::L1ToL0B"
+  pipe: [PIPE_MTE1, PIPE_MTE1]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L0B]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE1按32B block搬运"
+      - rule: "总字节数 <= L0B容量"
+        severity: error
+        tileop_cause: "L0B物理容量限制（通常32KB）"
+    recommended:
+      - scenario: "Cube MatMul B矩阵搬运"
+        value: "kL0对齐到16，nL0对齐到16"
+        reasoning: "L0B按列存储，需匹配Cube base_block"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - L1 -> L0B搬运，用于Cube MatMul的B矩阵
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:673 RegisterCube"
+
+OP_L1_TO_BT:
+  description: "L1到BT缓冲区的数据搬入（MTE1 DMA）"
+  calc_type: MOVE_LOCAL
+  core_type: AIC
+  tileop: "TileOp::L1ToBT"
+  pipe: [PIPE_MTE1, PIPE_MTE1]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [BT]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE1按32B block搬运"
+    recommended:
+      - scenario: "Bias搬运"
+        value: "C0对齐到16(fp16/bf16)"
+        reasoning: "BT缓冲区用于Cube偏置搬运"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - L1 -> BT缓冲区搬运，用于Cube偏置项
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:719 RegisterCube"
+
+# =============================================================================
+# GM -> UB with layout transform (PIPE_MTE2, AIV)
+# =============================================================================
+
+OP_TRANSPOSE_MOVEIN:
+  description: "GM到UB的转置数据搬入（MTE2 DMA，带布局转换）"
+  calc_type: MOVE_IN
+  core_type: ANY
+  tileop: "TileOp::TtransposeMoveIn"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "转置后的ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+    recommended:
+      - scenario: "转置搬运"
+        value: "C0对齐到16(fp16/bf16)或8(fp32)"
+        reasoning: "转置后UB布局仍需32B对齐"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - GM -> UB搬运同时进行转置布局转换
+    - 有shape属性（tileop属性）
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:436 RegisterVector"
+
+OP_RESHAPE_COPY_IN:
+  description: "GM到UB的数据搬入（MTE2 DMA，带形状变换）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::ReshapeCopyIn"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "Reshape后的ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+    recommended:
+      - scenario: "Reshape搬运"
+        value: "C0对齐到16(fp16/bf16)或8(fp32)"
+        reasoning: "Reshape后仍需32B对齐"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - GM -> UB搬运同时进行Reshape
+    - 有validShape属性
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:804 RegisterCommon"
+
+# =============================================================================
+# GM -> L1 with scale factor (PIPE_MTE2, AIC)
+# =============================================================================
+
+OP_L1_COPY_IN_A_SCALE:
+  description: "GM到L1的A矩阵scale因子搬入（MTE2 DMA）"
+  calc_type: MOVE_IN
+  core_type: AIC
+  tileop: "TileOp::TLoadAMX"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+    recommended:
+      - scenario: "量化Cube计算"
+        value: "C0对齐到16(fp16/bf16)"
+        reasoning: "A矩阵scale因子，配合L1_COPY_IN使用"
+  tags: []
+  notes: |
+    - A矩阵scale因子专用搬运（量化场景）
+  source: "opcode.cpp:726 RegisterCube"
+
+OP_L1_COPY_IN_B_SCALE:
+  description: "GM到L1的B矩阵scale因子搬入（MTE2 DMA）"
+  calc_type: MOVE_IN
+  core_type: AIC
+  tileop: "TileOp::TLoadAMX"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints:
+          - "内轴stride必须32B对齐"
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: 32
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_cube_tile_shapes"
+    constraints:
+      - rule: "末尾轴C0 = 32 / sizeof(dtype)"
+        severity: error
+        tileop_cause: "BLOCK_SIZE=32，MTE2按32B block搬运"
+    recommended:
+      - scenario: "量化Cube计算"
+        value: "C0对齐到16(fp16/bf16)"
+        reasoning: "B矩阵scale因子，配合L1_COPY_IN使用"
+  tags: []
+  notes: |
+    - B矩阵scale因子专用搬运（量化场景）
+    - 复用TLoadAMX TileOp实现
+  source: "opcode.cpp:728 RegisterCube"
+
+# =============================================================================
+# Distributed: GM -> UB (PIPE_S, AIV)
+# =============================================================================
+
+OP_SHMEM_GET_GM2UB:
+  description: "分布式共享内存GM到UB的数据搬入"
+  calc_type: DISTRIBUTED
+  core_type: AIV
+  tileop: "TileOp::Distributed::ShmemGetGm2Ub"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "任意"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: [DISTRIBUTED_OPS]
+  notes: |
+    - 分布式场景下从远端共享内存(GM)搬运到本地UB
+    - 有requiresBoundaryCopy属性
+  source: "opcode.cpp:765 RegisterDistribute"
+
+# =============================================================================
+# Gather-In (GM -> L1/UB, with index, calc_type=OTHER)
+# =============================================================================
+
+OP_GATHER_IN_L1:
+  description: "GM到L1的Gather搬入（带索引，MTE2 DMA）"
+  calc_type: OTHER
+  core_type: AIC
+  tileop: "TileOp::GatherInL1"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [L1]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 带索引的GM->L1 Gather搬运（3个输入：data, indices, offsets -> L1）
+    - 有startOffset属性
+  source: "opcode.cpp:723 RegisterCube"
+
+OP_GATHER_IN_UB:
+  description: "GM到UB的Gather搬入（带索引，MTE2 DMA）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::GatherInUB"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    index:
+      mem_type: [GM]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "ND"
+        contiguous: true
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: []
+  notes: |
+    - 带索引的GM->UB Gather搬运（3个输入：data, indices, offsets -> UB）
+  source: "opcode.cpp:552 RegisterVector"

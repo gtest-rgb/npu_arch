@@ -1,0 +1,107 @@
+# Cast Operations: type conversion
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVector()  OP_CAST (line 427)
+#   RegisterCommon()  OP_CONVERT (line 819)
+
+OP_CAST:
+  description: "张量数据类型转换"
+  calc_type: CAST
+  core_type: AIV
+  tileop: "TileOp::Tcast"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * max(input_element_size, output_element_size) % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8f6c\u6362"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [CAST_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持任意数据类型之间的转换
+    - 有mode属性控制转换模式
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:427 RegisterVector"
+
+OP_CONVERT:
+  description: "通用类型转换（框架级，无TileOp实现）"
+  calc_type: SYS
+  core_type: ANY
+  tileop: null
+  pipe: []
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input: {}
+    output: {}
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: [LASTUSE_OPS]
+  notes: |
+    - 框架级操作，无具体TileOp实现
+    - 不指定输入输出内存类型，由框架调度决定
+    - calc_type为SYS（系统级），不属于任何计算流水线
+    - 注册在RegisterCommon中
+  source: "opcode.cpp:819 RegisterCommon"

@@ -1,0 +1,2303 @@
+# Elementwise Operations: Binary (tensor-tensor), Scalar (tensor-scalar), Unary
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterVectorBinary()  (lines 67-241)
+#   RegisterVectorUnary()   (lines 243-302)
+#   RegisterVector()        OP_HUB (line 792)
+
+# =============================================================================
+# Binary Operations (tensor-tensor, calc_type=BROADCAST)
+# =============================================================================
+
+OP_ADD:
+  description: "张量逐元素加法"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Tadd"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性，允许输入轴合并
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS，支持动态非对齐场景
+  source: "opcode.cpp:67 RegisterVectorBinary"
+
+OP_SUB:
+  description: "张量逐元素减法"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Tsub"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:70 RegisterVectorBinary"
+
+OP_MUL:
+  description: "张量逐元素乘法"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Tmul"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:73 RegisterVectorBinary"
+
+OP_DIV:
+  description: "张量逐元素除法"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Tdiv"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:76 RegisterVectorBinary"
+
+OP_REM:
+  description: "张量逐元素取余"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TRemainder"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: unsupported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNSUPPORT_FP16_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性
+    - 有excludeBufferReuse标签，输出缓冲区不可复用
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:79 RegisterVectorBinary"
+
+OP_COPYSIGN:
+  description: "张量逐元素复制符号"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::Tcopysign"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, VECTOR_SCALAR_OPS, UNSUPPORT_BF16_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 同时在BINARY_OPS和VECTOR_SCALAR_OPS集合中
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:103 RegisterVectorBinary"
+
+OP_GCD:
+  description: "张量逐元素最大公约数"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TGcd"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:106 RegisterVectorBinary"
+
+# =============================================================================
+# Scalar (tensor-scalar) Operations (calc_type=BROADCAST, pipe=PIPE_S)
+# =============================================================================
+
+OP_S_ADD:
+  description: "张量与标量加法（标量在前，PIPE_S流水线）"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TSadd"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS]
+  notes: |
+    - 使用PIPE_S标量流水线，性能优于PIPE_V标量广播模式
+    - 支持inputCombineAxis属性
+    - 无TileShapeVerifier验证
+  source: "opcode.cpp:109 RegisterVectorBinary"
+
+OP_S_SUB:
+  description: "张量与标量减法（标量在前，PIPE_S流水线）"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TSsub"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS]
+  notes: |
+    - 使用PIPE_S标量流水线
+    - 支持inputCombineAxis属性
+    - 无TileShapeVerifier验证
+  source: "opcode.cpp:112 RegisterVectorBinary"
+
+OP_S_MUL:
+  description: "张量与标量乘法（标量在前，PIPE_S流水线）"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TSmul"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS]
+  notes: |
+    - 使用PIPE_S标量流水线
+    - 支持inputCombineAxis属性
+    - 无TileShapeVerifier验证
+  source: "opcode.cpp:115 RegisterVectorBinary"
+
+OP_S_DIV:
+  description: "张量与标量除法（标量在前，PIPE_S流水线）"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TSdiv"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS]
+  notes: |
+    - 使用PIPE_S标量流水线
+    - 支持inputCombineAxis属性
+    - 无TileShapeVerifier验证
+  source: "opcode.cpp:118 RegisterVectorBinary"
+
+OP_S_MAX:
+  description: "张量与标量取最大值（标量在前，PIPE_S流水线）"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TSmax"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS]
+  notes: |
+    - 使用PIPE_S标量流水线
+    - 支持inputCombineAxis属性
+    - 无TileShapeVerifier验证
+  source: "opcode.cpp:121 RegisterVectorBinary"
+
+OP_S_MIN:
+  description: "张量与标量取最小值（标量在前，PIPE_S流水线）"
+  calc_type: BROADCAST
+  core_type: AIV
+  tileop: "TileOp::TSmin"
+  pipe: [PIPE_S, PIPE_S]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input_a:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    input_b:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [BINARY_OPS, UNSUPPORT_BF16_OPS]
+  notes: |
+    - 使用PIPE_S标量流水线
+    - 支持inputCombineAxis属性
+    - 无TileShapeVerifier验证
+  source: "opcode.cpp:124 RegisterVectorBinary"
+
+# =============================================================================
+# Unary Operations (calc_type=ELMWISE)
+# =============================================================================
+
+OP_EXP:
+  description: "张量逐元素指数运算 e^x"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Texp"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:244 RegisterVectorUnary"
+
+OP_EXP2:
+  description: "张量逐元素2的指数运算 2^x"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Texp2"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 注册在RegisterVectorSort中（非RegisterVectorUnary）
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:344 RegisterVectorSort"
+
+OP_EXPM1:
+  description: "张量逐元素e^x-1运算"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Texpm1"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:247 RegisterVectorUnary"
+
+OP_NEG:
+  description: "张量逐元素取负"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tneg"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:251 RegisterVectorUnary"
+
+OP_RECIPROCAL:
+  description: "张量逐元素倒数 1/x"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Trec"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有excludeBufferReuse标签，输出缓冲区不可复用
+    - 无TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:254 RegisterVectorUnary"
+
+OP_RSQRT:
+  description: "张量逐元素平方根倒数 1/sqrt(x)"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Trsqrt"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:257 RegisterVectorUnary"
+
+OP_RELU:
+  description: "张量逐元素ReLU激活 max(x,0)"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Trelu"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:260 RegisterVectorUnary"
+
+OP_SQRT:
+  description: "张量逐元素平方根 sqrt(x)"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tsqrt"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:268 RegisterVectorUnary"
+
+OP_ABS:
+  description: "张量逐元素绝对值"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tabs"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:287 RegisterVectorUnary"
+
+OP_LN:
+  description: "张量逐元素自然对数 ln(x)"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tln"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:290 RegisterVectorUnary"
+
+OP_CEIL:
+  description: "张量逐元素向上取整"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tceil"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:271 RegisterVectorUnary"
+
+OP_FLOOR:
+  description: "张量逐元素向下取整"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tfloor"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:274 RegisterVectorUnary"
+
+OP_TRUNC:
+  description: "张量逐元素截断取整（向零取整）"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Ttrunc"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:277 RegisterVectorUnary"
+
+OP_ROUND:
+  description: "张量逐元素四舍五入"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tround"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 有excludeBufferReuse标签，输出缓冲区不可复用
+    - 有powDecimals属性控制精度
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:280 RegisterVectorUnary"
+
+OP_ISFINITE:
+  description: "张量逐元素判断是否有限值"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tisfinite"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+    - 不在UNSUPPORT_BF16_OPS中，支持bf16
+  source: "opcode.cpp:293 RegisterVectorUnary"
+
+OP_SIGN:
+  description: "张量逐元素符号函数 sign(x)"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tsign"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:296 RegisterVectorUnary"
+
+OP_SIGNBIT:
+  description: "张量逐元素判断符号位"
+  calc_type: ELMWISE
+  core_type: AIV
+  tileop: "TileOp::Tsignbit"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: unsupported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, UNSUPPORT_BF16_OPS, LASTUSE_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 支持inputCombineAxis和outputCombineAxis属性
+    - 有TileShapeVerifier验证
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:299 RegisterVectorUnary"
+
+OP_HUB:
+  description: "Hub操作，用于HUB核心执行"
+  calc_type: ELMWISE
+  core_type: HUB
+  tileop: "TileOp::Thub"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: null
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "\u4efb\u610f"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [GM]
+      layout:
+        type: "\u4e0e\u8f93\u5165\u4e00\u81f4"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+    elements_per_block:
+      fp16: 16
+      bf16: 16
+      fp32: 8
+  tile_shape:
+    api: "set_vec_tile_shapes"
+    constraints:
+      - rule: "\u672b\u5c3e\u8f74\u5927\u5c0f * element_size % 32 == 0"
+        severity: error
+        tileop_cause: "Vector\u6307\u4ee4\u8981\u6c42\u6bcf\u6b21\u8bfb\u53d6\u7684\u5b57\u8282\u6570\u4e3a32\u7684\u6574\u6570\u500d"
+    recommended:
+      - scenario: "\u901a\u5e38\u8ba1\u7b97"
+        value: "\u672b\u5c3e\u8f74\u5bf9\u9f50\u5230256Bytes"
+        reasoning: "\u5145\u5206\u5229\u7528UB\u5e26\u5bbd"
+  tags: [UNARY_OPS, SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 核心类型为HUB（非AIV），在GM上操作
+    - 有inplaceInfo属性
+    - 注册在RegisterCommon中
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:792 RegisterCommon"

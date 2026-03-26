@@ -1,0 +1,2121 @@
+# Operation -> OP_CODE Pipeline 映射
+# Layer 1: 高层 Operation API 到 OP_CODE 执行链路的映射
+#
+# 每个 operation 包含:
+#   description: 中文描述
+#   category: 对应 tileop_constraints 下的子目录名
+#   opcodes: 该 Operation 可能用到的计算 OP_CODE 列表（含触发条件和执行核心）
+#   pipeline: 完整执行链路（逻辑视图，实际代码生成可能融合或省略部分环节）
+#   source: Python API 源文件
+
+# ============================================================================
+# math.py — 算术运算
+# ============================================================================
+
+add:
+  description: "逐元素加法 C = A + B"
+  category: vector
+  opcodes:
+    - opcode: OP_ADD
+      condition: "两个 Tensor 相加"
+      core_type: AIV
+    - opcode: OP_ADD_BRC
+      condition: "broadcast 标量加法"
+      core_type: AIV
+    - opcode: OP_ADDS
+      condition: "立即数标量加法"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ADD
+      description: "逐元素加法"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+sub:
+  description: "逐元素减法 C = A - B"
+  category: vector
+  opcodes:
+    - opcode: OP_SUB
+      condition: "两个 Tensor 相减"
+      core_type: AIV
+    - opcode: OP_SUB_BRC
+      condition: "broadcast 标量减法"
+      core_type: AIV
+    - opcode: OP_SUBS
+      condition: "立即数标量减法"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_SUB
+      description: "逐元素减法"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+mul:
+  description: "逐元素乘法 C = A * B"
+  category: vector
+  opcodes:
+    - opcode: OP_MUL
+      condition: "两个 Tensor 相乘"
+      core_type: AIV
+    - opcode: OP_MUL_BRC
+      condition: "broadcast 标量乘法"
+      core_type: AIV
+    - opcode: OP_MULS
+      condition: "立即数标量乘法"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_MUL
+      description: "逐元素乘法"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+div:
+  description: "逐元素除法 C = A / B"
+  category: vector
+  opcodes:
+    - opcode: OP_DIV
+      condition: "两个 Tensor 相除"
+      core_type: AIV
+    - opcode: OP_DIV_BRC
+      condition: "broadcast 标量除法"
+      core_type: AIV
+    - opcode: OP_DIVS
+      condition: "立即数标量除法"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_DIV
+      description: "逐元素除法"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+neg:
+  description: "逐元素取负 C = -A"
+  category: vector
+  opcodes:
+    - opcode: OP_NEG
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_NEG
+      description: "逐元素取负"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+abs:
+  description: "逐元素取绝对值 C = |A|"
+  category: vector
+  opcodes:
+    - opcode: OP_ABS
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ABS
+      description: "逐元素取绝对值"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+exp:
+  description: "逐元素指数 C = e^A"
+  category: vector
+  opcodes:
+    - opcode: OP_EXP
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_EXP
+      description: "逐元素指数"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+exp2:
+  description: "逐元素 2 的幂 C = 2^A"
+  category: vector
+  opcodes:
+    - opcode: OP_EXP2
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_EXP2
+      description: "逐元素 2^x"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+expm1:
+  description: "逐元素 exp(x)-1"
+  category: vector
+  opcodes:
+    - opcode: OP_EXPM1
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_EXPM1
+      description: "逐元素 exp(x)-1"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+sqrt:
+  description: "逐元素平方根 C = sqrt(A)"
+  category: vector
+  opcodes:
+    - opcode: OP_SQRT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_SQRT
+      description: "逐元素平方根"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+rsqrt:
+  description: "逐元素平方根倒数 C = 1/sqrt(A)"
+  category: vector
+  opcodes:
+    - opcode: OP_RSQRT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_RSQRT
+      description: "逐元素平方根倒数"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+reciprocal:
+  description: "逐元素倒数 C = 1/A"
+  category: vector
+  opcodes:
+    - opcode: OP_RECIPROCAL
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_RECIPROCAL
+      description: "逐元素倒数"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+relu:
+  description: "逐元素 ReLU C = max(0, A)"
+  category: vector
+  opcodes:
+    - opcode: OP_RELU
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_RELU
+      description: "逐元素 ReLU"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+lrelu:
+  description: "逐元素 Leaky ReLU"
+  category: vector
+  opcodes:
+    - opcode: OP_LRELU
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_LRELU
+      description: "逐元素 Leaky ReLU"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise_scalar.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+prelu:
+  description: "逐元素 Parametric ReLU"
+  category: vector
+  opcodes:
+    - opcode: OP_PRELU
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_PRELU
+      description: "逐元素 PReLU"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+ceil:
+  description: "逐元素向上取整"
+  category: vector
+  opcodes:
+    - opcode: OP_CEIL
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CEIL
+      description: "逐元素向上取整"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+floor:
+  description: "逐元素向下取整"
+  category: vector
+  opcodes:
+    - opcode: OP_FLOOR
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_FLOOR
+      description: "逐元素向下取整"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+trunc:
+  description: "逐元素截断取整（向零取整）"
+  category: vector
+  opcodes:
+    - opcode: OP_TRUNC
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_TRUNC
+      description: "逐元素截断取整"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+round:
+  description: "逐元素四舍五入"
+  category: vector
+  opcodes:
+    - opcode: OP_ROUND
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ROUND
+      description: "逐元素四舍五入"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+sign:
+  description: "逐元素取符号 C = sign(A)"
+  category: vector
+  opcodes:
+    - opcode: OP_SIGN
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_SIGN
+      description: "逐元素取符号"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+signbit:
+  description: "逐元素判断符号位"
+  category: vector
+  opcodes:
+    - opcode: OP_SIGNBIT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_SIGNBIT
+      description: "逐元素判断符号位"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+copysign:
+  description: "逐元素复制符号 C = |A| * sign(B)"
+  category: vector
+  opcodes:
+    - opcode: OP_COPYSIGN
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_COPYSIGN
+      description: "逐元素复制符号"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise_scalar.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+pow:
+  description: "逐元素幂运算 C = A^B"
+  category: vector
+  opcodes:
+    - opcode: OP_POW
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_POW
+      description: "逐元素幂运算"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+log:
+  description: "逐元素自然对数 C = ln(A)"
+  category: vector
+  opcodes:
+    - opcode: OP_LN
+      condition: "自然对数 ln"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_LN
+      description: "逐元素自然对数"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+log2:
+  description: "逐元素以 2 为底的对数 C = log2(A)"
+  category: vector
+  opcodes:
+    - opcode: OP_LN
+      condition: "自然对数（内部转换）"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_LN
+      description: "逐元素对数"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+log10:
+  description: "逐元素以 10 为底的对数 C = log10(A)"
+  category: vector
+  opcodes:
+    - opcode: OP_LN
+      condition: "自然对数（内部转换）"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_LN
+      description: "逐元素对数"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+log1p:
+  description: "逐元素 ln(1+A)"
+  category: vector
+  opcodes:
+    - opcode: OP_LOG1P
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_LOG1P
+      description: "逐元素 ln(1+x)"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+hypot:
+  description: "逐元素斜边长 C = sqrt(A^2 + B^2)"
+  category: vector
+  opcodes:
+    - opcode: OP_HYPOT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_HYPOT
+      description: "逐元素斜边长"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+fmod:
+  description: "逐元素取模 C = A % B（与 C 语言 fmod 行为一致）"
+  category: vector
+  opcodes:
+    - opcode: OP_MOD
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_MOD
+      description: "逐元素取模"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+remainder:
+  description: "逐元素取余 C = A - floor(A/B) * B"
+  category: vector
+  opcodes:
+    - opcode: OP_REM
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_REM
+      description: "逐元素取余"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+bitwise_and:
+  description: "逐元素按位与 C = A & B"
+  category: vector
+  opcodes:
+    - opcode: OP_BITWISEAND
+      condition: "两个 Tensor 按位与"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_BITWISEAND
+      description: "逐元素按位与"
+      direction: "UB -> UB"
+      constraint_file: "vector/bitwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+bitwise_or:
+  description: "逐元素按位或 C = A | B"
+  category: vector
+  opcodes:
+    - opcode: OP_BITWISEOR
+      condition: "两个 Tensor 按位或"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_BITWISEOR
+      description: "逐元素按位或"
+      direction: "UB -> UB"
+      constraint_file: "vector/bitwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+bitwise_xor:
+  description: "逐元素按位异或 C = A ^ B"
+  category: vector
+  opcodes:
+    - opcode: OP_BITWISEXOR
+      condition: "两个 Tensor 按位异或"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_BITWISEXOR
+      description: "逐元素按位异或"
+      direction: "UB -> UB"
+      constraint_file: "vector/bitwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+bitwise_not:
+  description: "逐元素按位取反 C = ~A"
+  category: vector
+  opcodes:
+    - opcode: OP_BITWISENOT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_BITWISENOT
+      description: "逐元素按位取反"
+      direction: "UB -> UB"
+      constraint_file: "vector/bitwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+bitwise_right_shift:
+  description: "逐元素按位右移 C = A >> B"
+  category: vector
+  opcodes:
+    - opcode: OP_BITWISERIGHTSHIFT
+      condition: "两个 Tensor 右移"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_BITWISERIGHTSHIFT
+      description: "逐元素按位右移"
+      direction: "UB -> UB"
+      constraint_file: "vector/bitwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+bitwise_left_shift:
+  description: "逐元素按位左移 C = A << B"
+  category: vector
+  opcodes:
+    - opcode: OP_BITWISELEFTSHIFT
+      condition: "两个 Tensor 左移"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_BITWISELEFTSHIFT
+      description: "逐元素按位左移"
+      direction: "UB -> UB"
+      constraint_file: "vector/bitwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+logical_not:
+  description: "逐元素逻辑非 C = !A"
+  category: vector
+  opcodes:
+    - opcode: OP_LOGICALNOT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_LOGICALNOT
+      description: "逐元素逻辑非"
+      direction: "UB -> UB"
+      constraint_file: "vector/logical.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+logical_and:
+  description: "逐元素逻辑与 C = A && B"
+  category: vector
+  opcodes:
+    - opcode: OP_LOGICALAND
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_LOGICALAND
+      description: "逐元素逻辑与"
+      direction: "UB -> UB"
+      constraint_file: "vector/logical.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+clip:
+  description: "逐元素裁剪 C = clamp(A, min, max)"
+  category: vector
+  opcodes:
+    - opcode: OP_CLIP
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CLIP
+      description: "逐元素裁剪"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+isfinite:
+  description: "逐元素判断是否有限值"
+  category: vector
+  opcodes:
+    - opcode: OP_ISFINITE
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ISFINITE
+      description: "逐元素判断有限值"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+cumsum:
+  description: "沿指定维度累积求和"
+  category: vector
+  opcodes:
+    - opcode: OP_CUM_SUM
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CUM_SUM
+      description: "累积求和"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+gcd:
+  description: "逐元素最大公约数 C = gcd(A, B)"
+  category: vector
+  opcodes:
+    - opcode: OP_GCD
+      condition: "两个 Tensor"
+      core_type: AIV
+    - opcode: OP_GCDS
+      condition: "标量"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_GCD
+      description: "逐元素最大公约数"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+ceil_div:
+  description: "逐元素向上取整除法"
+  category: vector
+  opcodes:
+    - opcode: OP_CEIL_DIV
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CEIL_DIV
+      description: "逐元素向上取整除法"
+      direction: "UB -> UB"
+      constraint_file: "vector/elementwise.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+# ============================================================================
+# matmul.py — 矩阵乘法
+# ============================================================================
+
+matmul:
+  description: "矩阵乘法 C = A @ B"
+  category: cube
+  opcodes:
+    - opcode: OP_A_MUL_B
+      condition: "C = A * B（默认情况）"
+      core_type: AIC
+    - opcode: OP_A_MULACC_B
+      condition: "C += A * B（累加场景）"
+      core_type: AIC
+    - opcode: OP_A_MUL_BT
+      condition: "C = A * B^T（B 转置）"
+      core_type: AIC
+    - opcode: OP_A_MULACC_BT
+      condition: "C += A * B^T（B 转置累加）"
+      core_type: AIC
+    - opcode: OP_AT_MUL_B
+      condition: "C = A^T * B（A 转置）"
+      core_type: AIC
+    - opcode: OP_AT_MUL_BT
+      condition: "C = A^T * B^T（A、B 均转置）"
+      core_type: AIC
+  pipeline:
+    - stage: copy_in_a
+      opcode: OP_COPY_IN
+      description: "输入 A: GM -> L1"
+      direction: "GM -> L1"
+      constraint_file: "move/copy_in.yaml"
+    - stage: copy_in_b
+      opcode: OP_COPY_IN
+      description: "输入 B: GM -> L1"
+      direction: "GM -> L1"
+      constraint_file: "move/copy_in.yaml"
+    - stage: load_a
+      opcode: OP_L1_TO_L0A
+      description: "输入 A: L1 -> L0A"
+      direction: "L1 -> L0A"
+      constraint_file: "move/copy_in.yaml"
+    - stage: load_b
+      opcode: OP_L1_TO_L0B
+      description: "输入 B: L1 -> L0B"
+      direction: "L1 -> L0B"
+      constraint_file: "move/copy_in.yaml"
+    - stage: mmad
+      opcode: OP_A_MUL_B
+      description: "矩阵乘法 C = A * B"
+      direction: "L0A,L0B -> L0C"
+      constraint_file: "cube/matmul.yaml"
+    - stage: extract_c
+      opcode: OP_L0C_COPY_OUT
+      description: "输出 C: L0C -> L1"
+      direction: "L0C -> L1"
+      constraint_file: "move/copy_out.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出 C: L1 -> GM"
+      direction: "L1 -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/matmul.py"
+
+scaled_mm:
+  description: "MX 矩阵乘法（FP8 量化） C = A @ B（带 scale tensor）"
+  category: cube
+  opcodes:
+    - opcode: OP_A_MUL_B
+      condition: "MX 指令（FP8 输入，内部处理 scale）"
+      core_type: AIC
+  pipeline:
+    - stage: copy_in_a
+      opcode: OP_COPY_IN
+      description: "输入 A: GM -> L1"
+      direction: "GM -> L1"
+      constraint_file: "move/copy_in.yaml"
+    - stage: copy_in_b
+      opcode: OP_COPY_IN
+      description: "输入 B: GM -> L1"
+      direction: "GM -> L1"
+      constraint_file: "move/copy_in.yaml"
+    - stage: load_a
+      opcode: OP_L1_TO_L0A
+      description: "输入 A: L1 -> L0A"
+      direction: "L1 -> L0A"
+      constraint_file: "move/copy_in.yaml"
+    - stage: load_b
+      opcode: OP_L1_TO_L0B
+      description: "输入 B: L1 -> L0B"
+      direction: "L1 -> L0B"
+      constraint_file: "move/copy_in.yaml"
+    - stage: mmad
+      opcode: OP_A_MUL_B
+      description: "MX 矩阵乘法"
+      direction: "L0A,L0B -> L0C"
+      constraint_file: "cube/matmul.yaml"
+    - stage: extract_c
+      opcode: OP_L0C_COPY_OUT
+      description: "输出 C: L0C -> L1"
+      direction: "L0C -> L1"
+      constraint_file: "move/copy_out.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出 C: L1 -> GM"
+      direction: "L1 -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/matmul.py"
+
+# ============================================================================
+# conv.py — 卷积
+# ============================================================================
+
+conv:
+  description: "卷积运算（支持 1D/2D/3D）"
+  category: cube
+  opcodes:
+    - opcode: OP_CONV
+      condition: "默认卷积"
+      core_type: AIC
+  pipeline:
+    - stage: copy_in_input
+      opcode: OP_COPY_IN
+      description: "输入 feature map: GM -> L1"
+      direction: "GM -> L1"
+      constraint_file: "move/copy_in.yaml"
+    - stage: copy_in_weight
+      opcode: OP_COPY_IN
+      description: "输入 weight: GM -> L1"
+      direction: "GM -> L1"
+      constraint_file: "move/copy_in.yaml"
+    - stage: load
+      opcode: OP_L1_TO_L0A
+      description: "输入: L1 -> L0A/L0B"
+      direction: "L1 -> L0A/L0B"
+      constraint_file: "move/copy_in.yaml"
+    - stage: mmad
+      opcode: OP_CONV
+      description: "卷积计算"
+      direction: "L0A,L0B -> L0C"
+      constraint_file: "cube/conv.yaml"
+    - stage: extract
+      opcode: OP_L0C_COPY_OUT
+      description: "输出: L0C -> L1"
+      direction: "L0C -> L1"
+      constraint_file: "move/copy_out.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: L1 -> GM"
+      direction: "L1 -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/conv.py"
+
+# ============================================================================
+# reduction.py — 归约运算
+# ============================================================================
+
+sum:
+  description: "沿指定维度求和"
+  category: vector
+  opcodes:
+    - opcode: OP_ROWSUM
+      condition: "行方向求和"
+      core_type: AIV
+    - opcode: OP_ROWSUM_SINGLE
+      condition: "单次重复求和"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ROWSUM
+      description: "行方向求和"
+      direction: "UB -> UB"
+      constraint_file: "vector/reduce.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/reduction.py"
+
+prod:
+  description: "沿指定维度求积"
+  category: vector
+  opcodes:
+    - opcode: OP_ROWPRODLINE
+      condition: "行方向求积"
+      core_type: AIV
+    - opcode: OP_ROWPROD_SINGLE
+      condition: "单次重复求积"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ROWPRODLINE
+      description: "行方向求积"
+      direction: "UB -> UB"
+      constraint_file: "vector/reduce.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/reduction.py"
+
+amin:
+  description: "沿指定维度取最小值"
+  category: vector
+  opcodes:
+    - opcode: OP_ROWMAXLINE
+      condition: "行方向取最小值"
+      core_type: AIV
+    - opcode: OP_ROWMIN_SINGLE
+      condition: "单次重复取最小值"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ROWMAXLINE
+      description: "行方向取最小值"
+      direction: "UB -> UB"
+      constraint_file: "vector/reduce.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/reduction.py"
+
+amax:
+  description: "沿指定维度取最大值"
+  category: vector
+  opcodes:
+    - opcode: OP_ROWMAX
+      condition: "行方向取最大值"
+      core_type: AIV
+    - opcode: OP_ROWMAX_SINGLE
+      condition: "单次重复取最大值"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ROWMAX
+      description: "行方向取最大值"
+      direction: "UB -> UB"
+      constraint_file: "vector/reduce.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/reduction.py"
+
+maximum:
+  description: "逐元素取最大值 C = max(A, B)"
+  category: vector
+  opcodes:
+    - opcode: OP_MAXIMUM
+      condition: "两个 Tensor"
+      core_type: AIV
+    - opcode: OP_PAIRMAX
+      condition: "成对取最大值"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_MAXIMUM
+      description: "逐元素取最大值"
+      direction: "UB -> UB"
+      constraint_file: "vector/compare.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/reduction.py"
+
+minimum:
+  description: "逐元素取最小值 C = min(A, B)"
+  category: vector
+  opcodes:
+    - opcode: OP_MINIMUM
+      condition: "两个 Tensor"
+      core_type: AIV
+    - opcode: OP_PAIRMIN
+      condition: "成对取最小值"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_MINIMUM
+      description: "逐元素取最小值"
+      direction: "UB -> UB"
+      constraint_file: "vector/compare.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/reduction.py"
+
+var:
+  description: "沿指定维度计算方差"
+  category: vector
+  opcodes:
+    - opcode: OP_ROWSUM
+      condition: "内部用 sum 实现"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ROWSUM
+      description: "方差计算（内部由 sum/pow 等组合实现）"
+      direction: "UB -> UB"
+      constraint_file: "vector/reduce.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/math.py"
+
+# ============================================================================
+# comparison.py — 比较运算
+# ============================================================================
+
+greater:
+  description: "逐元素大于比较 (GT)"
+  category: vector
+  opcodes:
+    - opcode: OP_CMP
+      condition: "Tensor vs Tensor"
+      core_type: AIV
+    - opcode: OP_CMPS
+      condition: "Tensor vs 标量"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CMP
+      description: "逐元素大于比较"
+      direction: "UB -> UB"
+      constraint_file: "vector/compare.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+less:
+  description: "逐元素小于比较 (LT)"
+  category: vector
+  opcodes:
+    - opcode: OP_CMP
+      condition: "Tensor vs Tensor"
+      core_type: AIV
+    - opcode: OP_CMPS
+      condition: "Tensor vs 标量"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CMP
+      description: "逐元素小于比较"
+      direction: "UB -> UB"
+      constraint_file: "vector/compare.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+equal:
+  description: "逐元素等于比较 (EQ)"
+  category: vector
+  opcodes:
+    - opcode: OP_CMP
+      condition: "Tensor vs Tensor"
+      core_type: AIV
+    - opcode: OP_CMPS
+      condition: "Tensor vs 标量"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CMP
+      description: "逐元素等于比较"
+      direction: "UB -> UB"
+      constraint_file: "vector/compare.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+notequal:
+  description: "逐元素不等于比较 (NE)"
+  category: vector
+  opcodes:
+    - opcode: OP_CMP
+      condition: "Tensor vs Tensor"
+      core_type: AIV
+    - opcode: OP_CMPS
+      condition: "Tensor vs 标量"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CMP
+      description: "逐元素不等于比较"
+      direction: "UB -> UB"
+      constraint_file: "vector/compare.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+topk:
+  description: "取沿指定维度前 K 个最大/最小元素"
+  category: vector
+  opcodes:
+    - opcode: OP_TOPK_SORT
+      condition: "排序阶段（Sort32）"
+      core_type: AIV
+    - opcode: OP_TOPK_MERGE
+      condition: "合并阶段（MrgSort）"
+      core_type: AIV
+    - opcode: OP_TOPK_EXTRACT
+      condition: "提取阶段"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: sort
+      opcode: OP_TOPK_SORT
+      description: "排序阶段"
+      direction: "UB -> UB"
+      constraint_file: "vector/sort.yaml"
+    - stage: merge
+      opcode: OP_TOPK_MERGE
+      description: "合并阶段"
+      direction: "UB -> UB"
+      constraint_file: "vector/sort.yaml"
+    - stage: extract
+      opcode: OP_TOPK_EXTRACT
+      description: "提取阶段"
+      direction: "UB -> UB"
+      constraint_file: "vector/sort.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+argsort:
+  description: "沿指定维度返回排序后的索引"
+  category: vector
+  opcodes:
+    - opcode: OP_BITSORT
+      condition: "32 元素排序阶段"
+      core_type: AIV
+    - opcode: OP_MRGSORT
+      condition: "合并排序阶段"
+      core_type: AIV
+    - opcode: OP_TWOTILEMRGSORT
+      condition: "两 tile 合并排序"
+      core_type: AIV
+    - opcode: OP_SORT32
+      condition: "32 元素排序"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: sort
+      opcode: OP_BITSORT
+      description: "32 元素排序"
+      direction: "UB -> UB"
+      constraint_file: "vector/sort.yaml"
+    - stage: merge
+      opcode: OP_MRGSORT
+      description: "合并排序"
+      direction: "UB -> UB"
+      constraint_file: "vector/sort.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+sort32:
+  description: "每 32 个元素排序（值与索引交织输出）"
+  category: vector
+  opcodes:
+    - opcode: OP_SORT32
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_SORT32
+      description: "32 元素排序"
+      direction: "UB -> UB"
+      constraint_file: "vector/sort.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+mrgsort:
+  description: "合并排序"
+  category: vector
+  opcodes:
+    - opcode: OP_MRGSORT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_MRGSORT
+      description: "合并排序"
+      direction: "UB -> UB"
+      constraint_file: "vector/sort.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/comparison.py"
+
+# ============================================================================
+# indexing.py — 索引操作
+# ============================================================================
+
+gather:
+  description: "沿指定维度按索引收集元素"
+  category: vector
+  opcodes:
+    - opcode: OP_GATHER_ELEMENT
+      condition: "按元素索引收集"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_GATHER_ELEMENT
+      description: "按索引收集元素"
+      direction: "UB -> UB"
+      constraint_file: "vector/gather_scatter.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/indexing.py"
+
+index_select:
+  description: "沿指定维度按索引选择切片"
+  category: vector
+  opcodes:
+    - opcode: OP_GATHER
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB/L1"
+      direction: "GM -> UB/L1"
+      constraint_file: "move/gather_load.yaml"
+    - stage: compute
+      opcode: OP_GATHER
+      description: "按索引选择切片"
+      direction: "GM/L1 -> UB"
+      constraint_file: "move/gather_load.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/indexing.py"
+
+scatter:
+  description: "按索引写入元素"
+  category: vector
+  opcodes:
+    - opcode: OP_SCATTER_ELEMENT
+      condition: "按元素索引写入"
+      core_type: AIV
+    - opcode: OP_SCATTER
+      condition: "scatter 写入"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_SCATTER_ELEMENT
+      description: "按索引写入元素"
+      direction: "UB -> UB"
+      constraint_file: "vector/gather_scatter.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/indexing.py"
+
+scatter_update:
+  description: "按索引批量更新元素"
+  category: vector
+  opcodes:
+    - opcode: OP_SCATTER_UPDATE
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_SCATTER_UPDATE
+      description: "按索引批量更新"
+      direction: "UB -> UB"
+      constraint_file: "vector/gather_scatter.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/indexing.py"
+
+index_add:
+  description: "按索引累加元素"
+  category: vector
+  opcodes:
+    - opcode: OP_INDEX_ADD
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_INDEX_ADD
+      description: "按索引累加元素"
+      direction: "UB -> UB"
+      constraint_file: "misc/index.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/indexing.py"
+
+index_put:
+  description: "按索引写入元素"
+  category: vector
+  opcodes:
+    - opcode: OP_INDEX_PUT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_INDEX_PUT
+      description: "按索引写入元素"
+      direction: "UB -> UB"
+      constraint_file: "misc/index.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/indexing.py"
+
+gathermask:
+  description: "按模式掩码收集元素"
+  category: vector
+  opcodes:
+    - opcode: OP_GATHER_MASK
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_GATHER_MASK
+      description: "按掩码收集元素"
+      direction: "UB -> UB"
+      constraint_file: "vector/gather_scatter.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/indexing.py"
+
+# ============================================================================
+# joining.py — 拼接操作
+# ============================================================================
+
+concat:
+  description: "沿指定维度拼接多个 Tensor"
+  category: vector
+  opcodes:
+    - opcode: OP_CONCAT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CONCAT
+      description: "沿指定维度拼接"
+      direction: "UB -> UB"
+      constraint_file: "misc/special.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/joining.py"
+
+# ============================================================================
+# other.py — 其他操作
+# ============================================================================
+
+where:
+  description: "条件选择 C = condition ? input : other"
+  category: vector
+  opcodes:
+    - opcode: OP_WHERE_TT
+      condition: "condition 为 Tensor, input 为 Tensor, other 为 Tensor"
+      core_type: AIV
+    - opcode: OP_WHERE_TS
+      condition: "condition 为 Tensor, input 为 Tensor, other 为标量"
+      core_type: AIV
+    - opcode: OP_WHERE_ST
+      condition: "condition 为 Tensor, input 为标量, other 为 Tensor"
+      core_type: AIV
+    - opcode: OP_WHERE_SS
+      condition: "condition 为 Tensor, input 为标量, other 为标量"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_WHERE_TT
+      description: "条件选择"
+      direction: "UB -> UB"
+      constraint_file: "vector/logical.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/other.py"
+
+pad:
+  description: "张量填充"
+  category: vector
+  opcodes:
+    - opcode: OP_PAD
+      condition: "默认（constant 模式）"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_PAD
+      description: "填充"
+      direction: "UB -> UB"
+      constraint_file: "misc/special.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/other.py"
+
+one_hot:
+  description: "独热编码"
+  category: vector
+  opcodes:
+    - opcode: OP_ONEHOT
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_ONEHOT
+      description: "独热编码"
+      direction: "UB -> UB"
+      constraint_file: "misc/special.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/other.py"
+
+expand_exp_dif:
+  description: "计算 exp(A - B)（支持广播）"
+  category: vector
+  opcodes:
+    - opcode: OP_EXPANDEXPDIF
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_EXPANDEXPDIF
+      description: "计算 exp(A-B)"
+      direction: "UB -> UB"
+      constraint_file: "misc/special.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/other.py"
+
+# ============================================================================
+# creation.py — 创建操作
+# ============================================================================
+
+arange:
+  description: "创建等差数列 Tensor"
+  category: vector
+  opcodes:
+    - opcode: OP_RANGE
+      condition: "默认"
+      core_type: AIV
+  pipeline:
+    - stage: compute
+      opcode: OP_RANGE
+      description: "生成等差数列"
+      direction: "UB -> UB"
+      constraint_file: "misc/special.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/creation.py"
+
+# ============================================================================
+# mutating.py — 转换操作
+# ============================================================================
+
+cast:
+  description: "数据类型转换"
+  category: vector
+  opcodes:
+    - opcode: OP_CAST
+      condition: "默认类型转换"
+      core_type: AIV
+    - opcode: OP_CONVERT
+      condition: "数据格式转换"
+      core_type: AIV
+  pipeline:
+    - stage: copy_in
+      opcode: OP_COPY_IN
+      description: "输入: GM -> UB"
+      direction: "GM -> UB"
+      constraint_file: "move/copy_in.yaml"
+    - stage: compute
+      opcode: OP_CAST
+      description: "类型转换"
+      direction: "UB -> UB"
+      constraint_file: "vector/cast.yaml"
+    - stage: copy_out
+      opcode: OP_COPY_OUT
+      description: "输出: UB -> GM"
+      direction: "UB -> GM"
+      constraint_file: "move/copy_out.yaml"
+  source: "python/pypto/op/mutating.py"
+
+transpose:
+  description: "张量转置"
+  category: view
+  opcodes:
+    - opcode: OP_VIEW
+      condition: "默认（通过 view 实现）"
+      core_type: ANY
+  pipeline:
+    - stage: compute
+      opcode: OP_VIEW
+      description: "转置（view 操作，不搬运数据）"
+      direction: "N/A"
+      constraint_file: "view/view.yaml"
+  source: "python/pypto/op/mutating.py"
+
+expand_clone:
+  description: "广播展开（深拷贝）"
+  category: view
+  opcodes:
+    - opcode: OP_EXPAND
+      condition: "默认"
+      core_type: ANY
+  pipeline:
+    - stage: compute
+      opcode: OP_EXPAND
+      description: "广播展开"
+      direction: "N/A"
+      constraint_file: "view/expand.yaml"
+  source: "python/pypto/op/mutating.py"

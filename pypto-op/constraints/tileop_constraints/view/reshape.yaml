@@ -1,0 +1,179 @@
+# Reshape Operations: View and data-movement reshape
+# Source: framework/src/interface/operation/opcode.cpp
+#   RegisterCommon()  (lines 802-809)
+
+OP_RESHAPE:
+  description: "张量形状变换（纯元数据操作，无数据移动）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::Treshape"
+  pipe: [PIPE_V, PIPE_V]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: []
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: []
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 纯元数据操作，不移动数据
+    - 输入输出元素总数必须相同
+    - 有validShape属性
+    - 不需要set_vec_tile_shapes
+  source: "opcode.cpp:802 RegisterCommon"
+
+OP_RESHAPE_COPY_IN:
+  description: "Reshape Copy In，将数据从GM搬入UB并改变形状（涉及数据移动）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::ReshapeCopyIn"
+  pipe: [PIPE_MTE2, PIPE_MTE2]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: [GM]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [UB]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 涉及实际数据移动（GM到UB）
+    - 使用MTE2流水线搬入数据
+    - 属于IsCopyIn集合
+    - 有validShape属性
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:804 RegisterCommon"
+
+OP_RESHAPE_COPY_OUT:
+  description: "Reshape Copy Out，将数据从UB搬出到GM并改变形状（涉及数据移动）"
+  calc_type: OTHER
+  core_type: ANY
+  tileop: "TileOp::ReshapeCopyOut"
+  pipe: [PIPE_MTE3, PIPE_MTE3]
+  dtype:
+    fp16: supported
+    bf16: supported
+    fp32: supported
+    int8: supported
+  operands:
+    input:
+      mem_type: [UB]
+      layout:
+        type: "任意"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+    output:
+      mem_type: [GM]
+      layout:
+        type: "与输入一致"
+        contiguous: false
+        max_dims: 5
+      stride:
+        required: false
+        constraints: []
+      alignment:
+        address: null
+        scope: null
+      shape:
+        min_elements: 1
+        max_elements_per_dim: null
+  hardware:
+    mask_len: 64
+    repeat_max: 255
+    block_size: 32
+  tile_shape:
+    api: null
+    constraints: []
+    recommended: []
+  tags: [SUPPORT_DYNAMIC_UNALIGNED_OPS]
+  notes: |
+    - 涉及实际数据移动（UB到GM）
+    - 使用MTE3流水线搬出数据
+    - 属于IsCopyOut集合
+    - 有validShape属性
+    - 属于SUPPORT_DYNAMIC_UNALIGNED_OPS
+  source: "opcode.cpp:807 RegisterCommon"
