@@ -13,6 +13,7 @@
 | 8 | Entitlement boundary | [arxiv-2606.22283-ch8-entitlement-boundary.md](./arxiv-2606.22283-ch8-entitlement-boundary.md) |
 | 24 | HAL and capability gates | [arxiv-2606.22283-ch24-hal-capability-gates.md](./arxiv-2606.22283-ch24-hal-capability-gates.md) |
 | 25 | Compression internals | [arxiv-2606.22283-ch25-compression-internals.md](./arxiv-2606.22283-ch25-compression-internals.md) |
+| 26 | Hidden layers & direct netplist authoring | [arxiv-2606.22283-ch26-hidden-layers-netplist.md](./arxiv-2606.22283-ch26-hidden-layers-netplist.md) |
 
 ## 两条互补的 reachability 视角
 
@@ -24,6 +25,10 @@
 ## 第 25 章主线
 
 权重压缩的四套 codec（int8 仿射 / int4 LUT / 结构化稀疏 / 块级仿射）+ 流式 vs 折叠两道开关 + 14 字 OCG 打包记录 + 双稀疏机制 + FP8/Winograd 边界情况。回答的是"权重字节怎么从训练好的张量变成芯片能直接吃的压缩流，以及谁在门控这条路径"。
+
+## 第 26 章主线
+
+**45 个原生 descriptor vs 框架层 ≈190 种 op**。手写 `.espresso.net`（schema 1.0.10）可以跳过 Core ML 翻译器，直接触达 Zin IR 里那 45 个原生描述符——其中藏着 SDPA、Sort、点云、流式状态、33 节 LUT 等"隐藏算子"。两套 gate（`MinimumFamily` trait vs HAL capability bytes）互不一致，必须分别通过；**验证通过 ≠ 可达**。SDPA 的 `SubtractMax` 标志是 fp16 数值正确性的命门。这条路是私有 API + 反编译得来，仅供研究测量，Core ML 仍是唯一发行路径。
 
 ## 免责声明
 
