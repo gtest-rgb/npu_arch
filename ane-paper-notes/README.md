@@ -12,6 +12,7 @@
 |---|---|---|
 | 8 | Entitlement boundary | [arxiv-2606.22283-ch8-entitlement-boundary.md](./arxiv-2606.22283-ch8-entitlement-boundary.md) |
 | 24 | HAL and capability gates | [arxiv-2606.22283-ch24-hal-capability-gates.md](./arxiv-2606.22283-ch24-hal-capability-gates.md) |
+| 25 | Compression internals | [arxiv-2606.22283-ch25-compression-internals.md](./arxiv-2606.22283-ch25-compression-internals.md) |
 
 ## 两条互补的 reachability 视角
 
@@ -19,6 +20,10 @@
 - **第24章（硬件 attested）**：HAL 表 + MinimumFamily trait——回答"一块芯片表里声明支持哪些 op"
 
 两者共同构成 ANE 的能力边界判据：**attested ⊋ reachable**，软件 entitlement 无法撼动硬件 primitive 缺失。
+
+## 第 25 章主线
+
+权重压缩的四套 codec（int8 仿射 / int4 LUT / 结构化稀疏 / 块级仿射）+ 流式 vs 折叠两道开关 + 14 字 OCG 打包记录 + 双稀疏机制 + FP8/Winograd 边界情况。回答的是"权重字节怎么从训练好的张量变成芯片能直接吃的压缩流，以及谁在门控这条路径"。
 
 ## 免责声明
 
