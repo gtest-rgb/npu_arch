@@ -11,7 +11,7 @@
 
 ## 0. 章节定位
 
-第8章位于论文 **Part II "Programming the engine"** 的收尾位置，紧接第7章《Weights and compression》、之后是 Part III 的第9章《Roofline》。
+第8章位于论文 **Part II "Reaching the ANE"** 的收尾位置，紧接第7章《Weights and compression》、之后是 Part III 的第9章《Roofline》。
 
 它回答一个核心问题：
 

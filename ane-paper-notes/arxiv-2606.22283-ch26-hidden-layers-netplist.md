@@ -68,16 +68,15 @@
 ### 3.1 文件扩展名与 schema 版本
 
 - 扩展名：`.espresso.net`（"Espresso"是 Apple 内部对 ANE 编译前端的老名字）
-- Schema 版本（截至论文测量）：**1.0.10**
+- Schema 版本（截至论文测量）：**1.0.10**（论文 §22 / §23 给出）
 - 物理上就是一个 Apple 属性表（plist），可以用 `plutil -p` 直接打开看
-- 解析器入口符号：`ZinParseUnit`（在 ANECompiler 二进制里）
+- 解析器入口：每个 layer 有一对 `ZinParse<Name>Unit` / `_ANEC<Name>LayerDescInitialize` / `_ANECValidate<Name>` 例程（例如 `ZinParseSDPAUnit`），并没有一个统称的 `ZinParseUnit` 入口
 
 ### 3.2 顶层结构
 
-一份 netplist 长这样（伪代码，字段名经过对齐）：
+一份 netplist 长这样（伪代码，字段名经过对齐；论文 Table 22.6 列出的顶层 key 是 `Networks`、`ProcedureList`、`Units`、`Weights` 等）：
 
 ```plist
-SchemaVersion = "1.0.10"
 Network {
     Name    = "my_handwritten_graph"
     Target  = "H13"              # M1 → H13，见 §六的命名规则
@@ -109,19 +108,19 @@ Network {
 几个关键点：
 
 - **`Unit`** 就是图里的一个节点，对应 Zin IR 里的一个 Zin operation。
-- **`Type`** 必须命中那 45 个原生描述符之一，否则 `ZinParseUnit` 直接拒绝。
+- **`Type`** 必须命中那 45 个原生描述符之一，否则对应 layer 的 `ZinParse<Name>Unit` 直接拒绝。
 - **`Bottom` / `Top`** 是 Caffe 风格的命名张量连接（Bottom = 输入，Top = 输出）。
-- **`Params`** 是该描述符的参数子表，字段名和编译器二进制里的 `_ANECLayerDescInitialize` 一一对应。
+- **`Params`** 是该描述符的参数子表，字段名和编译器二进制里的 `_ANEC<Name>LayerDescInitialize` 一一对应（每 layer 一套）。
 - **`Weights`** 直接内嵌压缩后的权重字节流（参见第 25 章的压缩格式）。
 
 ### 3.3 解析与验证的两道关
 
-每一个 `Unit` 在被接受之前要经过两个函数：
+每一个 `Unit` 在被接受之前要经过一对 per-layer 例程（名字按 `Type` 实例化）：
 
-1. **`_ANECLayerDescInitialize`**：把 plist 里的 `Params` 字典填到一个 C 结构体里，做基本的类型检查。
-2. **`_ANECValidateLayer`**：根据 `Type` 调对应描述符的验证器，检查字段齐全性、维度合理性、是否被当前 `Target` 支持。
+1. **`_ANEC<Name>LayerDescInitialize`**：把 plist 里的 `Params` 字典填到一个 C 结构体里，做基本的类型检查。
+2. **`_ANECValidate<Name>Layer`**：调对应描述符的验证器，检查字段齐全性、维度合理性、是否被当前 `Target` 支持。
 
-注意：**`_ANECValidateLayer` 通过 ≠ 这一层在芯片上真能跑**。验证器只看"字段齐不齐、类型对不对"，不看"硬件 primitive 在不在"。后者要等 `Target` gate 在后端才检查。这是第 26 章反复强调的**"验证通过不等于可达"**原则。
+注意：**验证器通过 ≠ 这一层在芯片上真能跑**。验证器只看"字段齐不齐、类型对不对"，不看"硬件 primitive 在不在"。后者要等 `Target` gate 在后端才检查。这是第 26 章反复强调的**"验证通过不等于可达"**原则。
 
 ---
 
@@ -133,21 +132,21 @@ Network {
    ① 写 .espresso.net
         │
         ▼
-   ② 用 ANECompiler 直接编译，跳过 Core ML 转换
+   ② 用 bridge node / tunneled-unit 路径把原生 Type 直接送后端
         │
         ▼
-   ③ 拿到 .mlmodelc，注入到 AppleH11ANEInterface 的私有 API
+   ③ 编译器跑 validator + 分配引擎，产出 .mlmodelc
         │
         ▼
-   ④ 提交 command buffer，观察输出 / 寄存器 / 中断
+   ④ 加载 + 绑定张量 + 提交执行（第 6 章 direct dispatch 同款）
 ```
 
-具体做法（论文 §26.3，decompile-derived）：
+具体做法（论文 §26.3 + §26.5）：
 
-- **第 ① 步**：按 §三的模板写 plist。`Target` 字段决定走哪个芯片家族（H13=M1、H14=M2、H15=M3、H16=M4、H17=M5；A 系列 A13→H13，A14→H14，依此类推）。
-- **第 ② 步**：调用 `ANECompiler` 的 `compile` 私有入口，传入 netplist 路径，跳过 Core ML 的 `espresso` 翻译层。
-- **第 ③ 步**：编译产物是个 `.mlmodelc` bundle，里面是 `model.espresso.net` + `weights.bin`。用 `objc_getClass("AppleH11ANEInterface")` 拿到私有类，调 `-allocateNetworkWithDescriptor:...` 加载。
-- **第 ④ 步**：构造 `ANEProgramRequest`，把输入张量地址填进去，`IOConnectCall` 提交。输出的 status code 在第 17 章 command protocol 里有完整表。
+- **第 ① 步**：按 §三的模板写 plist。`Target` 字段决定走哪个芯片家族（H13=M1，H17=M5；其余代际编号见 §六的命名规则）。
+- **第 ② 步**：通过编译器的 "tunneled-unit / bridge node" 路径，把 `Type=<原生 descriptor 名>` 的 Unit **不经翻译**直接交给后端。论文 §26.2 强调这条路径"passes the descriptor through the framework layer untouched"，是直写能触达隐藏算子的关键。
+- **第 ③ 步**：编译器跑该 layer 的 validator，分配引擎，落成编译产物（`.mlmodelc` bundle，含 `model.espresso.net` + 权重）。
+- **第 ④ 步**：编译产物照第 6 章 "direct dispatch" 的同样方式加载、绑定输入张量、提交执行；目标芯片上的 compile-and-run 是**唯一**能确认"真的跑通"的判据。
 
 **重要警告**（论文原文反复强调）：
 
@@ -159,76 +158,88 @@ Network {
 
 ## 五、那 45 个原生描述符里，藏着哪些"框架层看不到的算子"？
 
-这是整章最关键的部分。论文列出 6 类"隐藏算子"，它们在 Core ML 的 190 种 op 目录里**没有直接对应物**，但在 Zin IR 里有原生 Type：
+这是整章最关键的部分。论文 §26.3 + Table 26.1 列出 7 类"隐藏算子族"，它们在 Core ML 的 190 种 op 目录里**没有直接对应物**，但在编译器里有原生 descriptor：
 
 ### 5.1 融合注意力（Fused Attention / SDPA）
 
 - **Type 名**：`SDPA`（Scaled Dot-Product Attention）
-- **Core ML 等价物**：没有。Core ML 必须把 attention 拆成 `MatMul → Mul(scale) → Softmax → MatMul` 四个 op。
-- **关键 Params**：
-  - `SubtractMax`（布尔）：softmax 之前是否减去当前 row 的最大值。**论文强调：必须设为 `true`，否则 fp16 数值会在 head_dim 较大时溢出**。这是 SDPA 数值正确性的命门。
-  - `CausalMask`（布尔）：是否做因果掩码（decoder 用）。
-  - `ScaleType`：`Scalar` 或 `PerHead`（决定 scale 是一个数还是每头一个）。
+- **Core ML 等价物**：没有。Core ML 必须把 attention 拆成 `MatMul → Mul(scale) → Softmax → MatMul` 四个 op，因为它的 op 集合里没有 atom 能 lower 到这个单一 descriptor。
+- **操作数契约**：4 或 5 个 Bottom —— `q, k, v, scale`，外加可选的第 5 个**加性 mask 张量**（因果掩码就是把这个 mask 留成"对角线及以下为 0、以上为大负偏置"的数据形态，**不是 Params 布尔位**）。
+- **唯一 Params 关键字段**：`SubtractMax`（布尔）—— softmax 之前是否减去当前 row 的最大值。**论文强调：descriptor 构造函数默认是 `false`，对 softmax 是数值错的，因此手写 SDPA Unit 必须显式设为 `true`**。这是 SDPA 数值正确性的命门。
+- **首次跑通的家族**：**M1 (H13) 起，不被纹理引擎门控**——这是 Table 26.1 明确点出的、隐藏算子里少数 M1 就能原生跑的。
 - **意义**：原生 SDPA 把 4 个 op 压成 1 个 DMA 边界，省掉 3 次中间张量回写，带宽利用率显著提升。
 
-### 5.2 排序（Sort）
+### 5.2 排序与选择（Ranking and selection）
 
-- **Type 名**：`Sort`
-- 支持升序 / 降序、支持沿指定轴。
-- Core ML 公开算子里没有独立 sort（只能用 `TopK`、`Gather` 等组合模拟）。
-- 典型用途：NMS 后处理、beam search、top-1 采样。
+- **涵盖**：`top-k`、`sort`、`argument-minimum-and-maximum`、whole-tensor argument form
+- 整数索引输出以 fp16 编码返回（在它们能产出的索引范围内是精确的）
+- Core ML 公开算子里没有独立 sort（只能用 `TopK`、`Gather` 等组合模拟）
+- **M1 上的门控细节**（Table 26.1）：top-k、sort、dynamic-slice 的 validator 都能调通，但 **code generator 在 M1 上拒绝 sort 和 dynamic-slice**，top-k 只在一段很窄的禁用参数带之外才接受。whole-tensor argmin/argmax 走 MinimumFamily，**A15+ 才原生**。
+- 典型用途：NMS 后处理、beam search、top-1 采样
 
-### 5.3 空间重排（Spatial Rearrange）
+### 5.3 空间重排（Spatial rearrangement）
 
-- **Type 名**：`SpatialRearrange`、`ImToCol`、`ColToIm`
-- 把 im2col / col2im 这种展开做成原生 op，而不是让框架用 reshape+transpose 拼。
-- 典型用途：传统卷积的 im2col 展开、vision transformer 的 patch embedding。
+- **涵盖**：**pixel-shuffle / pixel-unshuffle** 一对、**channel-and-space** 一对、**space-and-batch** 一对
+- 每对都用 per-axis integer factor 参数化；区别于别名，它们由 channel-ordering convention 区分
+- M1 起原生支持
+- 典型用途：超分辨率上采样（pixel-shuffle）、Vision Transformer patch embedding（space-and-batch）
 
-### 5.4 几何 / 点云（Geometry / Point Cloud）
+### 5.4 额外的归一化（Additional normalizations）
 
-- **Type 名**：`PointCloudProject`、`VoxelPool`
-- 用于 3D 感知、AR、自动驾驶场景。
-- Core ML 公开 API 里这部分要么没有，要么走 MPS。
+- **涵盖**：range normalization（把张量映射到 min–max 区间）、local response normalization、per-channel affine gain-offset control（静态和 runtime-tensor 两种形式）
+- **range normalization 是 arch-gated 的，M1 上拒绝**；gain-offset 在 M1 起就支持
+- Core ML 公开 API 里这部分要么没有，要么要走 MPS
 
-### 5.5 数据移动（Data Movement）
+### 5.5 几何与点云（Geometry and point cloud）
 
-- **Type 名**：`DMA`、`Concat`、`Split`、`Broadcast`、`Transpose`（带特殊 stride 模式）
-- 这些在框架层是"零成本"的元数据操作，但在 ANE 上**真的会占用 DMA 通道和周期**。
-- 直写 netplist 可以精确控制 DMA 的 tile 大小、双缓冲、流水线深度——这些是 Core ML 不会暴露的旋钮。
+- **涵盖**：template cross-correlation、three-vector cross product、furthest-point sampling、radius neighborhood search、stereo cost volume
+- cross product 要求 interleave-one 布局和 fp16 操作数；template cross-correlation 的深度为 1
+- M1 起对 cross / correlation 形式可用
+- 典型用途：3D 感知、AR、自动驾驶、立体匹配
 
-### 5.6 流式状态（Streaming State）
+### 5.6 纹理采样器（Texture samplers）
 
-- **Type 名**：`StateRead`、`StateWrite`、`StateUpdate`
-- 让 ANE 在不同 inference 之间保留一份片上状态（KV cache、RNN hidden state）。
-- 这是 ANE 能做"有状态推理"的根基——Core ML 的 `mlmodel` 把状态外显成额外输入输出，但芯片里其实有专门的 state descriptor。
+- **涵盖**：作为硬件采样器的 resize、crop-and-resize、grid resample、affine spatial transform
+- **门控**：被纹理引擎 capability byte (`0x81d`) 门控，**A14+ 才接受，M1 上拒绝**（报错信息形如 "affine transform is not supported on this architecture"）
+- 这是隐藏算子里**最大的一族 M1 缺失项**
 
-### 5.7 可编程激活 LUT（Programmable Activation LUT）
+### 5.7 数据移动（Data movement）
 
-- **Type 名**：`NonLinear` 配合 `kZinIrNonLinearCustomLUT` 操作码
-- 一张 **33 节分段线性查找表**（32 段）。
-- 你可以在片上烧任意形状的分段线性激活函数（不是 ReLU/Swish 这种预定义的）。
-- 典型用途：量化感知推理里的分段折线、自定义门控函数、近似 GELU。
+- **涵盖**：re-strided input view、runtime-offset dynamic slice、tile、concatenate
+- re-strided view 必须跟在一个 reshape 之后；dynamic slice 在 M1 上 validator 过但 codegen 拒
+- 这些在框架层是"零成本"的元数据操作，但在 ANE 上**真的会占用 DMA 通道和周期**
+- 直写 netplist 可以精确控制 DMA 的 tile 大小——这些是 Core ML 不会暴露的旋钮
+
+### 5.8 流式状态（Streaming state）
+
+- **涵盖**：live state、ring-buffer reader / writer、tensor-to-buffer movers
+- ring-buffer writer 必须连到一个 live-state buffer；**circular mode 在 M1 上是 arch-gated 的，只能通过 shared resident buffer 间接达到**（见第 8 章对 counter-and-event engine 缺失的解释）
+- 让 ANE 在不同 inference 之间保留一份片上状态（KV cache、RNN hidden state）
+- Core ML 的 `mlmodel` 把状态外显成额外输入输出，但芯片里其实有专门的 state descriptor
+
+### 5.9 可编程激活 LUT（Programmable Activation LUT）
+
+- 操作码：`kZinIrNonLinearCustomLUT`
+- 一张 **33 节分段线性查找表**（32 段），33 knot 值在固定 step 上均匀分布，32 个 inter-knot delta 紧跟在短 header 后
+- 论文 §26.10 指出：**raw custom-table path 实际上从 netplist 不可达** —— unit parser 同时要求一个 saturation set 和一个 version-specific set，consistency check 又拒绝它们共存，因此**没有手写的表能同时满足**。capability 是真的，但用户侧够不到；固件在 load 时从程序里 synthesize 出来。
+- 工程上的近似等价：任意 pointwise 函数都能写成 `linear → relu → linear` 链（rectifier basis），在 fp16 精度内复现任意 knot table。论文用 Gaussian bump 演示了这一点。
+- 典型用途：量化感知推理里的分段折线、自定义门控函数、近似 GELU
 
 ---
 
 ## 六、芯片家族命名规则：M(n) → H(n+12)
 
-论文在 §26.2 把 `Target` 字段的命名规则讲清楚了，这里直接抄一份表：
+`Target` 字段决定走哪个芯片家族。论文 ch24 / ch26 直接确认了两个锚点：**M1 = H13 = A13**（M1 ANE 与 A13 同代微架构）、**M5 = A17**。其它代际对应（M2→H14、M3→H15、M4→H16）是按 Apple 一贯的"A 系列 / H 系列 / M 系列同代对应"惯例**外推**的，论文 ch26 没逐项列出：
 
-| 公开名 | 内部 H 名 | 说明 |
+| 公开名 | 内部 H 名 | 出处 |
 |---|---|---|
-| A13 | H13 | iPhone 11 系列 |
-| A14 | H14 | iPhone 12 系列 |
-| A15 | H15 | iPhone 13 系列 |
-| A16 | H16 | iPhone 14 Pro |
-| A17 | H17 | iPhone 15 Pro |
-| M1 | H13 | 与 A13 同代 ANE 微架构 |
-| M2 | H14 | 与 A14 同代 |
-| M3 | H15 | 与 A15 同代 |
-| M4 | H16 | 与 A16 同代 |
-| M5 | H17 | 与 A17 同代 |
+| A13 / M1 | H13 | 论文 Table 24.1、Listing 26.3 直接给出 |
+| A14 / M2 | H14 | 外推（惯例） |
+| A15 / M3 | H15 | 外推（惯例） |
+| A16 / M4 | H16 | 外推（惯例） |
+| A17 / M5 | H17 | 论文 §24.2 直接给出 |
 
-**规则**：`H(n) ↔ M(n−12) ↔ A(n)`（n ≥ 13）。`Target` 字段填错会直接编译失败——验证器会拿 `Target` 去查那个家族的 HAL capability bytes，看你要的 Type 在不在白名单里。
+`Target` 字段填错会直接编译失败——验证器会拿 `Target` 去查那个家族的 HAL capability bytes，看你要的 Type 在不在白名单里。
 
 ---
 
@@ -247,49 +258,34 @@ Network {
 含义：
 
 - 一个 op 在 Core ML 里"支持"，不代表它走的就是 ANE——可能被翻译器降级到 CPU。
-- 一个 Type 在 netplist 里能被 `_ANECValidateLayer` 通过，也不代表 HAL capability bytes 答应——可能在后端被踢掉。
+- 一个 Type 在 netplist 里能被 `_ANECValidate<Name>Layer` 通过，也不代表 HAL capability bytes 答应——可能在后端被踢掉。
 - **两套 gate 同时检查，任一不通过都到不了芯片**。
 
 ---
 
 ## 八、SDPA 完整示例：手写一遍原生 SDPA
 
-把前面的知识串起来。下面是一份**最小可编译**的 SDPA netplist（论文 §26.4 风格，字段名经过整理）：
+把前面的知识串起来。下面是一份**最小可编译**的 SDPA Unit（论文 §26.4 Listing 26.1 的等价中文重述，plist 字段经过整理）：
 
 ```plist
-SchemaVersion = "1.0.10"
-Network {
-    Name    = "minimal_sdpa"
-    Target  = "H14"                    # M2 / A14 起支持原生 SDPA
-    Inputs  = [ "q", "k", "v" ]
-    Outputs = [ "attn_out" ]
-
-    Unit "scale_const" {
-        Type       = "Constant"
-        Top        = [ "scale" ]
-        Params     = { Value = 0.125 }    # 1/sqrt(head_dim)
-        OutputType = "Float16"
+Unit "attn" {
+    Type       = "SDPA"
+    Bottom     = [ "q", "k", "v", "scale" ]   # 可选第 5 个：加性 mask
+    Top        = [ "attn_out" ]
+    Params     = {
+        SubtractMax = true                    # ← 必须开，否则 softmax 数值错
     }
-
-    Unit "attn" {
-        Type       = "SDPA"
-        Bottom     = [ "q", "k", "v", "scale" ]
-        Top        = [ "attn_out" ]
-        Params     = {
-            SubtractMax = true            # ← 必须开，否则 fp16 溢出
-            CausalMask  = true            # decoder 用
-            ScaleType   = "Scalar"
-        }
-        OutputType = "Float16"
-    }
+    OutputType = "Float16"
 }
 ```
 
-要点：
+要点（全部出自论文 §26.4 + Table 26.1）：
 
-1. `Target = "H14"`：论文测量确认原生 SDPA 在 H14（M2/A14）及以上才进入 HAL capability 白名单。H13（M1/A13）写也会过 `_ANECValidateLayer`，但后端会被 capability bytes 拒掉。
-2. `SubtractMax = true`：fp16 最大值约 65504，head_dim=128 时 softmax 分母会爆。SubtractMax 把每行减去最大值，等价于数值稳定的 softmax。**漏掉这个标志是手写 SDPA 最常见的错误**。
-3. `scale` 作为单独的 `Constant` 单元产出——因为 `ScaleType = "Scalar"` 要求 scale 是一个张量输入，而不是 Params 里的字面量。
+1. **Target 选 H13 即可**：论文 Table 26.1 明确标 "Fused attention... **M1, not texture-gated**"，§26.4 进一步说 "it runs on every family from the M1 onward"。SDPA 是隐藏算子里**少数 M1/H13 就原生跑**的，不是 H14+ 才支持。
+2. **`SubtractMax = true`**：descriptor 构造函数默认是 `false`，对 softmax 是数值错的，**漏掉这个标志是手写 SDPA 最常见的错误**。
+3. **因果掩码不是 Params 布尔位**：它是**第 5 个加性 mask 操作数（数据）**——把对角线及以下设为 0、以上设为大负偏置，broadcast 到 heads 上。`CausalMask` 之类的 Params 字段**在论文里不存在**。
+4. **scale 是操作数**，是 4 个 Bottom 之一（或 5 个中的第 4 个），不是 Params 字面量。论文里没有 `ScaleType` / `PerHead` 这类 Params 字段。
+5. validator 强约束：4 或 5 个 Bottom 必须存在；`key` 和 `value` 共享 shape；`q × kᵀ` 必须能 contract 到 `v`。
 
 ---
 
@@ -337,4 +333,4 @@ Network {
 └──────────────────────────────────────────────────────────────┘
 ```
 
-下一章（第 27 章）会讲 netplist 之上的更高一层抽象——直接和 AppleH11ANEInterface 的 command buffer 打交道的"协议层"，把第 17 章的 command protocol 和本章的 netplist 串成一个完整的端到端直连路径。
+下一篇就该看 **第 27 章 Kernel driver and IOKit ABI**（私有类 `AppleH11ANEInterface` 在论文 p.177 出现的地方）和 **第 30 章 Host-to-firmware command protocol**——它们一起把本章的 netplist 串成一条完整的端到端直连路径。第 17 章（Model-design rules）是面向模型作者的规则集，与 command protocol 不是同一回事。

@@ -28,7 +28,7 @@
 
 ## 第 26 章主线
 
-**45 个原生 descriptor vs 框架层 ≈190 种 op**。手写 `.espresso.net`（schema 1.0.10）可以跳过 Core ML 翻译器，直接触达 Zin IR 里那 45 个原生描述符——其中藏着 SDPA、Sort、点云、流式状态、33 节 LUT 等"隐藏算子"。两套 gate（`MinimumFamily` trait vs HAL capability bytes）互不一致，必须分别通过；**验证通过 ≠ 可达**。SDPA 的 `SubtractMax` 标志是 fp16 数值正确性的命门。这条路是私有 API + 反编译得来，仅供研究测量，Core ML 仍是唯一发行路径。
+**45 个原生 descriptor vs 框架层 ≈190 种 op**。手写 `.espresso.net`（schema 1.0.10）可以跳过 Core ML 翻译器，直接触达 Zin IR 里那 45 个原生描述符——其中藏着 SDPA、Ranking/selection、pixel-shuffle/unshuffle、几何与点云、纹理采样器、流式状态、33 节 LUT 等"隐藏算子"。两套 gate（`MinimumFamily` trait vs HAL capability bytes）互不一致，必须分别通过；**验证通过 ≠ 可达**。SDPA 的 `SubtractMax` 标志是 fp16 数值正确性的命门，且 SDPA 从 M1/H13 起就原生跑（不被纹理引擎门控）。这条路是私有 API + 反编译得来，仅供研究测量，Core ML 仍是唯一发行路径。
 
 ## 免责声明
 
