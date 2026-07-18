@@ -1,436 +1,224 @@
-# arXiv:2606.22283 第24章《HAL and capability gates》深度解读
+# Apple Neural Engine 论文第 24 章解读
+## HAL 与能力开关（HAL and capability gates）
 
-> 论文：*Apple Neural Engine: Architecture, Programming, and Performance*  
-> 作者：Spencer H. Bryngelson  
-> 单位：Georgia Institute of Technology  
-> 提交：2026-06-21，302 页，12 图  
-> 许可：CC-BY 4.0  
-> DOI: `10.48550/arXiv.2606.22283`
+> 原论文：Spencer H. Bryngelson, *Apple Neural Engine: Architecture, Programming, and Performance*, arXiv:2606.22283 (2026)
+> 本章原文页码：p157–163
 
 ---
 
-## 0. 章节定位
+## 一、这一章到底在讲什么？
 
-第24章位于论文 **Part IV "Reverse-engineered internals"** 的第二章，承接第23章 (Program and container format)，下接第25章 (Compression internals)。
+一句话概括：
 
-它回答一个工程问题：
+> **苹果用一个编译器二进制文件，就能给 A11 到 A18、M1 到 M5 这一整排芯片生成代码。靠的不是几十份代码，而是一张"芯片档案表"。**
 
-> **一个编译器二进制如何为 A11–A18、M1–M5 共 28 个 target 生成代码？答案是一个 per-chip 数据表 + 两种 gate 机制。**
+这张表叫 **HAL（Hardware Abstraction Layer，硬件抽象层）属性表**，是编译器在编译时读取的"目标芯片说明书"。
+本章就把这张表剖开给你看：里面有什么、怎么用、有哪些坑。
 
----
-
-## 1. 全章主线 (SUMMARY)
-
-> **一个编译器二进制 + 一张 per-chip 数据表 = 全 chip family 的代码生成。**
-
-关键事实：
-
-- 编译器是 **单一二进制**，任何 chip 都由同一份代码构建
-- target 差异完全来自一张编译期读取的数据表：**HAL (Hardware Abstraction Layer)**
-- HAL 包含两类条目：
-  - **scalar 字段**（按 byte offset 索引的数值上限）
-  - **capability byte**（密集布尔标志区，offset `0x48f`–`0x8cc`，每个 byte 按 `hal[offset] & 1` 读出，gate 一个 op 或一种 format）
-- 操作合法性声明在 op 自身的 `MinimumFamily` trait 上：target family index ≥ N 才 native，低于 floor 走 decomposition
-- **没有任何 compute op 的 floor 高于 A15** —— 新世代只加 core 数和时钟，不加新 op
-- **Attested ≠ reachable**：表里的 capability 只证明"读它的那一层承认支持"，不证明"silicon 上能跑"。3D 卷积在 `0x70` attested kernel depth 16，但所有 device mask 上 lowering 都失败
+打个比方：编译器像一位厨师，HAL 表就是一份"这间厨房有什么工具、能做什么菜"的清单。厨师不需要为每间厨房学一套新手艺，照着清单做就行。
 
 ---
 
-## 2. HAL 表的结构 (§24.1)
+## 二、HAL 表里有什么？
 
-HAL（struct 名为 `ZinIrHalParameters`）是一个 **packed 结构**，编译器对每个 target 调用对应的 constructor 构建。两种条目共存：
+HAL 表是一个紧凑的二进制结构（C 结构体名 `ZinIrHalParameters`，总长 0x938 字节），分为两大区域：
 
-### 2.1 Scalar region（数值限制）
-- offset 范围：`0x18` ~ 约 `0x348`（plain data）
-- 非 scalar 成员（format map、cost-model curve）延伸到更后
+### 1. 标量字段区（numeric limits，约 0x18–0x348）
 
-### 2.2 Capability-byte region（单字节开关）
-- offset 范围：`0x48f` ~ `0x8cc`
-- 共约 **165 个单字节 flag**
-- 其中 **24 个已恢复字段名**，其余按 offset 枚举 + 按 enabling family 分类
-- 读取约定：`hal[offset] & 1`
+记录各种**数值上限和限制**，例如：
 
-### 2.3 Cost-model 区（嵌在同一表里）
-- policy-name 字符串 @ `0x580`
-- frequency-to-efficiency 曲线 @ `0x7a8`
-- per-cycle divisor @ `0x228`
-- 第18章 roofline 直接从这里读，**而不是单独文件**
-
-### 2.4 代表性 scalar 字段表 (Table 24.1，节选)
-
-| Offset | 字段 | M1 (H13) 值 | 何时变化 |
+| 偏移 | 字段名 | 含义 | M1 的值 |
 |---|---|---|---|
-| `0x70` | `max_large_conv_kernel_dim_z` (3D conv kernel depth) | 16 | A13 起 attested（其下一档为 1） |
-| `0x138` | `max_tensor_width` | 16384 | A16 起 65536 |
-| `0x158` | `max_tensor_depth` | 16384 | A13 下一档 1，A16 起 65536 |
-| `0x1b8` | `max_operand_bytes` (SRAM working set) | **2 MB** | 全线恒定（M9 为 1 MB） |
-| `0x1c0` | `dram_alignment` (DMA granule) | 16 | 全线恒定 |
-| `0x1c8` | `l2_bank_align` | 64 | 恒定 |
-| `0x1f0` | L2-resident buffer threshold | 0 | A15: 32768，A16: 262144 |
-| `0x200` | **dense kernel-memory cap** | **64 KB** | fold-path 预算 |
-| `0x210` | **streamed kernel-memory cap** | **16 MB** | stream-path 预算 |
-| `0x218` | instruction alignment | 256 | A14 起 16 |
-| `0x228` | `ne_perf_cycle_divisor` | 64 | H11: 32，M9: 16 |
-| `0x238` | `num_nes` (NE 核数) | 4 | die-keyed: 4/8/16/32/64 |
-| `0x288` | extended dual-kernel-memory mode | 0 | 全 28 target 都为 0 |
-| `0x3f0` | reduction-via-transpose extent | 192 | A15 起 384 |
-| `0x400` | `pe_min_patch_width_log2` | 4 (即 16 像素) | M1/M5 恒定 |
-| `0x580` | cost-model policy name | "Simple"/"None" | 旧/小 profile 不同 |
-| `0x668` | interchange-format count | 3 | A14: 13，A15: 16，A16: 14 |
+| `0x1b8` | `max_operand_bytes` | 片上 SRAM 工作集上限 | 2 MB |
+| `0x1c0` | `dram_alignment` | DMA 对齐粒度 | 16 字节 |
+| `0x238` | `num_nes` | NE 核数量 | 4（M1） |
+| `0x138` | `max_tensor_width` | 张量最大宽度 | 16384 |
+| `0x70` | `max_large_conv_kernel_dim_z` | 3D 卷积核深度上限 | 16 |
+| `0x200` | dense kernel-memory cap | 非流式权重上限 | 64 KB |
+| `0x210` | streamed kernel-memory cap | 流式权重上限 | 16 MB |
 
-### Listing 24.1 C 视图（关键片段）
+读法很简单：编译器就是 `value = hal[offset]`，按偏移取数。
+
+### 2. 能力字节区（capability bytes，0x48f–0x8cc）
+
+约 **165 个单字节布尔开关**，每一个对应一个算子或格式的"开/关"。读法是：
 
 ```c
-struct ZinIrHalParameters {
-    uint64_t max_large_conv_kernel_dim_z;  /* 0x70: 3D-conv kernel depth = 16 */
-    uint64_t max_tensor_width;             /* 0x138: 16384 */
-    uint64_t max_operand_bytes;            /* 0x1b8: 2 MB */
-    uint64_t dram_alignment;               /* 0x1c0: 16 */
-    uint64_t l2_bank_align;                /* 0x1c8: 64 */
-    uint64_t num_nes;                      /* 0x238: 4 */
-    uint8_t  cap_bytes[0x8cd - 0x48f];     /* 0x48f..0x8cc: per-op cap flags */
-};
+if (hal[offset] & 1) { /* 该功能在此芯片可用 */ }
 ```
 
-读取习惯：`texture engine @ 0x81d`、`kernel-streaming master @ 0x48f` 都是 `hal[offset] & 1`。
+已经"破译"出名字的 24 个，例如：
+
+| 偏移 | 含义 | M1 | A14+ |
+|---|---|---|---|
+| `0x48f` | 流式权重主控（64 KB vs 16 MB 切换） | 1 | 1 |
+| `0x81d` | **纹理引擎（texture engine）** | **0** | **1** |
+| `0x52d` | fp8 E4M3 格式 | 0 | 仅 A18 |
+| `0x4a9` | dropout / 随机 | 0 | A15+ |
+| `0x815` | 原生 softmax | 1 | 1 |
+
+> 关键例子：M1 上 `0x81d` 读出来是 0，所以 resize、crop-resize、affine transform 这些**都得走软件分解路径**，从 A14 起才有硬件纹理引擎。
 
 ---
 
-## 3. Operation gate：MinimumFamily trait (§24.2)
+## 三、算子能不能跑？两道闸门一起管
 
-**操作合法性不在 HAL 表里，而在 op 自身上** —— 编译器给每个 backend op 附着一个 trait：`MinimumFamily`。
+光看 HAL 表还不够。论文揭示：**算子合法性其实由两道独立的闸门决定**，二者一齐放行才能真正编译出来。
 
-### 3.1 Family index 编号
+### 闸门 1：`MinimumFamily<N>`（最低家族等级）
 
-| Generation | Family index |
-|---|---|
-| A11 Legacy | 0 |
-| A12 | 1 |
-| A13（含 M1） | 2 |
-| A14 | 3 |
-| A15 | 4 |
-| … | … |
-| A17（含 M5） | 6 |
-| A18 | 7 |
+每个算子自带一个属性：`MinimumFamily<N>`，N 是它"出生"的代。
 
-### 3.2 Native-or-decompose 决策 (Listing 24.2)
+家族等级排序（部分）：
+
+```
+A11Legacy=0  A12=1  A13=2  A14=3  A15=4  ...  M1→A13  M5→A17
+```
+
+判定规则：
 
 ```python
-# mlir::OpTrait::anec::MinimumFamily: native iff target family >= N
 def op_is_native(op, target_family):
-    return target_family >= op.minimum_family   # 例 softmax N=2(A13), sin N=4(A15)
-
-def lower_op(op, target_family):
-    if op_is_native(op, target_family):
-        emit_native(op)        # 一条 anec op
-    else:
-        decompose(op)          # 重写成 floor 以下合法的 op
+    return target_family >= op.minimum_family
 ```
 
-**M1 = family 2，M5 = family 6**：所以 `sin` (floor 4) 在 M5 上 native、在 M1 上 decompose。
+例：`sin` 的 floor 是 4（A15+），所以
+- M1（family=2）→ 分解为合法算子
+- M5（family=6）→ 直接原生发射
 
-### 3.3 Floor 分档 (Table 24.2)
+### 闸门 2：HAL 能力字节
 
-| Floor | Native on | 代表性 op |
+控制**同一个算子内部的一条路由**。比如"有没有纹理引擎"。
+
+### 两道闸门怎么配合？
+
+| 情况 | 结果 |
+|---|---|
+| 家族够格 + 能力字节=1 | 算子原生发射 |
+| 家族不够格 | 分解为更基础的合法算子，或被拒绝 |
+| 家族够格但能力字节=0 | 走软件分解路径 |
+
+不同代之间的差异**只是数据，不是代码**——同一份编译器源码，芯片不同读表不同，结果不同。
+
+### 算子分层速查表
+
+| 等级 | 适用代 | 代表算子 |
 |---|---|---|
-| **F0** | 所有 family | conv、matmul、pooling、elementwise、reshape、transpose、concat |
-| **F2** (A13+) | A13 起 | softmax、layer/instance/batch norm、reductions、attention、erf、sqrt |
-| **F3** (A14+) | A14 起 | crop-resize、resample |
-| **F4** (A15+) | A15 起 | sin、cos、global argmin/argmax |
+| **F0** | 全部 | 卷积、矩阵乘、池化、elementwise、reshape、transpose、concat |
+| **F2 (A13+)** | A13 起 | softmax、各种 norm、reductions、attention、erf、sqrt |
+| **F3 (A14+)** | A14 起 | crop-resize、resample |
+| **F4 (A15+)** | A15 起 | sin、cos、argmin/argmax |
 
-> **关键观察**：没有 compute op 的 floor 高于 A15。**新世代只加 core 数和时钟，不加新 op。**
-
-### 3.4 两种 gate 的分工
-
-| Gate | 粒度 | 决定什么 |
-|---|---|---|
-| **Capability byte** (`hal[offset] & 1`) | op **内部**某条路径 | 例：texture engine @ `0x81d` 是否存在；M1 上读 0 → resize 走 decomposition |
-| **MinimumFamily trait** | op **本身是否 native** | target family 是否 ≥ floor |
-
-任何一个 gate 关闭时，编译器要么：
-- emit 一个 decomposition 成合法 op
-- 要么 reject，报错信息会点名架构名
-
-### 3.5 Per-chip 差异是数据，不是代码
-
-> 因为 floor 是 op 的属性、limit 是 chip 的表项，**per-chip 差异是 data，不是 code**。重写 op 的编译器文本在全 family 上 **完全相同**，chip 只是在底下的表里挑不同的 limit/gate/decomposition 策略。
-
-这是 Apple 把 28 个 target 收敛到一个二进制的根本设计原则。
+> 重点：**没有哪个计算算子的 floor 高于 A15**。也就是说，A16/A17/A18 这些新代主要增加的是**核数和频率**，而不是新算子。
 
 ---
 
-## 4. Capability-byte 全线视图 (§24.3, Table 24.3)
+## 四、各代标量参数对比（核心一张表）
 
-| Byte | Gate 含义 | M1 (H13) | A14 | A15 | A16 | A18 |
-|---|---|---|---|---|---|---|
-| `0x48f` | **kernel-streaming master**（64KB↔16MB 选择） | 1 | 1 | 1 | 1 | 1 |
-| `0x494` | square-after-reduction fusion | 0 | 1 | 1 | 1 | 1 |
-| `0x4a9` | dropout and random | 0 | 0 | 1 | 1 | 1 |
-| `0x4f2` | global argmin/argmax | 1 | 1 | 1 | 1 | 1 |
-| `0x529` | per-format kernel-stride enable（palette stream） | 1 | 1 | 1 | 1 | 1 |
-| `0x52d` | **fp8 E4M3 kernel format** | 0 | 0 | 0 | 0 | **1** |
-| `0x563` | **FIFO-mode DMA** | 0 | 0 | 0 | 0 | **1** |
-| `0x815` | softmax, native | 1 | 1 | 1 | 1 | 1 |
-| `0x816` | instance normalization, native | 1 | 1 | 1 | 1 | 1 |
-| `0x81a` | local-response normalization, native | 1 | 1 | 1 | 1 | 1 |
-| `0x81d` | **texture engine** | **0** | 1 | 1 | 1 | 1 |
-
-### 三个值得记住的 byte
-
-1. **`0x81d` texture engine**：M1 上最大的功能缺口。读 0 → resize/crop-resize/resample/affine transform/hardware gather/symmetric padding **全部走软件 decomposition**。从 A14 起置 1
-2. **`0x52d` fp8 E4M3**：28 个 target 里 **只有 A18** 设；M5（A17）**没有**
-3. **`0x48f` streaming master** 和 **`0x529` palette stream**：M1 上都为 1，所以 int4 palette 和 sparse form 流式可用；int8 和 blockwise 走 fold 路径（见第25章）
-
-### Host 可以恢复任何 chip 的表
-
-> 编译器通过调用 target 的 constructor 构建表，**单一 host 即可恢复整条 chip line 的表，无论它运行的是不是这块芯片**。
-
-这是逆向工程能够批量产 per-chip target 表的根本原因。
-
----
-
-## 5. Per-family scalar matrix (§24.4, Table 24.4)
-
-跨世代 anchor 的 scalar 参数呈现同一模式：**一个值持稳几代，然后一次性跳变**。
-
-| 字段 (offset) | M1 (H13) | A14 | A15 | A16 (M4) | A17 (M5) |
+| 字段 | M1 (A13) | A14 | A15 | A16 (M4) | A17 (M5) |
 |---|---|---|---|---|---|
-| `num_nes` (`0x238`) | 4 | 4 | 4 | 4 | **16** |
-| `max_operand_bytes` (`0x1b8`) | 2 MB | 2 MB | 2 MB | 2 MB | 2 MB |
-| `max_tensor_width` (`0x138`) | 16384 | 16384 | 16384 | **65536** | 65536 |
-| `max_tensor_depth` (`0x158`) | 16384 | 16384 | 16384 | **65536** | 65536 |
-| `max_large_conv_kernel_dim_z` (`0x70`) | 16 | 16 | 16 | 16 | 16 |
-| L2-resident threshold (`0x1f0`) | 0 | 0 | **32768** | **262144** | 262144 |
-| instruction alignment (`0x218`) | 256 | **16** | 16 | 16 | 16 |
-| reduction-transpose extent (`0x3f0`) | 192 | 192 | **384** | 384 | 384 |
-| interchange-format count (`0x668`) | 3 | **13** | **16** | **14** | 14 |
+| `num_nes` 核数 | 4 | 4 | 4 | 4 | 16（Pro 版） |
+| SRAM 工作集 | 2 MB | 2 MB | 2 MB | 2 MB | 2 MB |
+| 张量最大宽 | 16384 | 16384 | 16384 | 65536 | 65536 |
+| L2 驻留阈值 | 0 | 0 | 32768 | 262144 | 262144 |
+| 指令对齐 | 256 | 16 | 16 | 16 | 16 |
+| 支持的图像格式数 | 3 | 13 | 16 | 14 | 14 |
 
-> **M5 列 `num_nes = 16`** 是因为这是 16-core Pro-class profile；base A17 是 4 核。per-die 序列：4 (base) / 8 (g-suffix) / 16 (s 和 legacy 16-core) / 32 (c) / 64 (d Ultra-class)。
+核数按 die 等级递增：base=4、`g`=8、`s`=16、`c`=32、`d`=64。
 
 ---
 
-## 6. Kernel-memory split (§24.5, Listing 24.3)
+## 五、内核内存的双轨制（§24.5，这一节很实用）
 
-streaming master byte `0x48f` 不只 gate 压缩权重流——它 **选择两层 kernel-memory cap 中的哪一层** 来衡量 layer 的权重：
+`0x48f` 这个能力字节**不仅是个开关**，它还在选择权重走哪条尺寸限制：
 
 ```python
-# ExceedKmemSizeLimit: split-legalize a layer's weights when they exceed the cap
 def exceeds_kmem(hal, demand, is_streamable):
-    cap = hal[0x210] if (is_streamable and hal[0x48f]) else hal[0x200]
+    if is_streamable and hal[0x48f]:
+        cap = hal[0x210]   # 16 MB 流式
+    else:
+        cap = hal[0x200]   # 64 KB 稠密
     return cap < demand
-    # 0x200 = 64 KB dense,  0x210 = 16 MB streamed
 ```
 
-### 后果
+含义：
+- **普通稠密权重**：单层超过 **64 KB** 就会被拆成多个子层
+- **流式压缩权重**：上限 **16 MB**，单层能塞的权重大得多
 
-| 情形 | M1 上的行为 |
-|---|---|
-| 普通 dense 权重 > 64 KB | **split 成多个 sub-layer**，dispatch 数和编译时间上升 |
-| 任意权重 > 16 MB | 同样 split |
-| streamable 压缩权重（且 master byte = 1） | 用 16 MB cap，每层权重容量大幅提升 |
-
-> **注意**：这是 weight path 的限制。**activation 不受此限**，它们仍受 `max_tensor_*` 维度 cap 约束；小权重 + 大 activation 的 layer 受 partition pass 的 tiling 成本约束，而不是这个离散限制。
+所以"流式"不只是省带宽，还能**避免权重被切碎**——拆层会增加 dispatch 数和编译时间。这条规则只管权重，不管激活值。
 
 ---
 
-## 7. Dead and family-gated fields (§24.6)
+## 六、几个容易踩坑的地方
 
-**不是表里每个值都是 live gate。** 对 28 个 target blob 做 byte-granular re-diff 后：
-- **0 个未解码 scalar 字段**
-- 但若干 offset 虽然 per-family 变化、却 **从不通过表指针被读回** —— 它们是 **write-only mirror**
+### 坑 1：表里有"死字段"
 
-### 五个 dead scalar offset
+并不是每个写进表的偏移都真的会被读。有 5 个标量偏移（如 `0x18`、`0x80`、`0x260` 等）是**只写不读的镜像值**——其他结构共享了同样的字节位移，真正读这些值的地方不在这里。
 
-| Offset | 内容 |
-|---|---|
-| `0x18` | global element cap |
-| `0x80` | kernel-depth constant |
-| `0x260` | legacy tiling granule |
-| `0x320` | (未命名) |
-| `0x29c` | die-class flag |
+判定方法：**看 load 指令的基寄存器是不是表指针**。同一个位移可能对应几十个不同结构。
 
-每个都随 family 变化，但 reader 实际从 **另一个共享 byte displacement 的对象** 读：tensor-dimensions、compiler-parameters、memory-pools 结构。
+### 坑 2：表里写着"1"，未必真的能用（§24.8，最重要的告诫）
 
-### Distinguishing test
+> **"Attested is not reachable"（登记在册 ≠ 能跑）**
 
-> 表字段读取的判据：**access 处的 base register 是否持有 table pointer**。因为同一 displacement 会别名 dozens 个其他 by-reference 结构——单看 displacement 匹配 **不能** 证明是表读取。
+3D 卷积是最经典的反例：
+- HAL 表 `0x70` 处记录 3D 卷积核深度=16 ✓
+- 编译器前端识别这个算子 ✓
+- 但是！**后端 lowering 在所有设备上都失败** ✗
 
-### 反例：`0x563` FIFO-mode
+反过来也成立：M1 上 `top-k`、`sort`、`dynamic-slice` 的校验器都能通过，但代码生成阶段被拒。
 
-读 0（M1），但 **不是 dead**：它在 A18 上置 1，通过表指针读取，但读取处在一个 **只有当 byte 已置位才进入** 的分支下。
+**结论**：能力字节只证明"这一层说支持"，不证明"真的能跑"。唯一可靠的验证方式是 **compile-and-run on the target**（在目标芯片上真正编译并运行一次）。这就是为什么论文第 4 章给出的"原生可用算子表"全部是在 M1 上实测出来的，而不是从 HAL 表推断的。
 
-> **教训**：per-family 值模式本身不能建立 live gate——只有 **traced reader off the table base** 才能证明。
+### 坑 3：FIFO 字节的陷阱
+
+`0x563`（FIFO 模式）在 M1 上读出来是 0，看起来"死了"，其实没死——它通过表指针读取，但只在它=1 时分支才进入，而这种情况直到 **A18 才出现**。所以"按代变化"并不等于"被读取"，要看是不是从表基址真正 load。
 
 ---
 
-## 8. 命名其余 capability flag (§24.7)
+## 七、怎么逆推字段名？（§24.7 方法论小贴士）
 
-### 8.1 为什么没有 per-field getter
+`ZinIrHalParameters` 结构体没有 getter 方法，编译器全是**内联 `ldrb`/`ldr` 加固定偏移**读取。所以光反汇编只能拿到偏移和值，拿不到字段名。
 
-`ZinIrHalParameters` **没有 per-field getter 方法**。编译器读取方式是 **inline 的 `ldrb` / `ldr [reg, #offset]`**。所以第一轮逆向只能恢复 offset 和 value，**不能恢复 name**。
+字段名只活在一个地方：**编译器保留的 mangled C++ 符号**。读者函数签名形如 `f(ZinIrHalParameters const&)`，函数名就标注了它读的是哪个字段。
 
-### 8.2 名字唯一存活的地方
+通过交叉比对，本章又命名了 95 个偏移，其中 30 个能定位到精确含义，例如：
 
-编译器保留了 **full mangled C++ symbols**。Reader 函数签名形如 `ZinIrHalParameters const&`，所以 **reader 函数的名字 = 它读取字段的 label**。
-
-判据：只有当 load 的 base register 是函数的 `ZinIrHalParameters const&` 参数时，才把这次读归因于表。
-
-### 8.3 本轮新命名的 flag (Table 24.5 节选)
-
-| Offset | 字段 | Reader 函数 |
+| 偏移 | 读者函数 | 含义 |
 |---|---|---|
-| `0x4a8` | PE work-unit-shape supported | `PERasterization::ComputeWUShape` |
-| `0x4ac` | small-source-mode compression | `ZinANELayer::AllowCompressionBasedOnSmallSourceMode` |
-| `0x4b0` | non-power-of-2 WU width | `NERasterization::CanUseNonPowerOf2WUs` |
-| `0x4f0` | preferred kernel layout format | `ZinIrKernel::GetPreferredKernelLayoutFormat` |
-| `0x500` | transpose and multicast config | `ZinNELayer::FindValidMirInfoForTransposeCore` |
-| `0x520` | secure-mode cache-hint DSID gate | `GetDSIDFromPriorityHalAndSecureMode` |
-| `0x52c` | tensor-format flag (pairs with `0x52d` fp8) | `ZinLayerValidationUtils::ValidateFormat` |
-| `0x54c` | cache-prefetch kernel-task interval limit | `ZinValidateTd<17>::ValidateCachePrefetchKernelTaskInterval` |
-| `0x5a8` | cache-hint DSID value | `GetDSIDFromPriorityHalAndSecureMode` |
-| `0x708` | reflective-padding max extent | `ZinValidateTd<20>::ValidateReflectivePaddingMode` |
-| `0x748` | gather/texture-engine descriptor ptr | `ZinGatherLayer::CreateTELayer` |
-| `0x8b4` | tile-height-errata threshold | `ZinTileHeightErrata::Workaround` |
-| `0x8bc` | chaining enabled | `ZinIrRegAllocUtil::IsChainable` |
-| `0x8e0` | kernel-caching enabled | `ZinIrTdValidationUtil::ValidateKernelCaching` |
+| `0x4a8` | `PERasterization::ComputeWUShape` | PE 工作单元形状 |
+| `0x4ac` | `ZinANELayer::AllowCompressionBasedOnSmallSourceMode` | 小源压缩支持 |
+| `0x8b4` | `ZinTileHeightErrata::Workaround` | tile 高度 errata 阈值 |
+| `0x8bc` | `ZinIrRegAllocUtil::IsChainable` | 链式支持 |
 
-### 8.4 三种命名精度
+这套方法把"硅能力子集"——也就是编译器按代关开的功能位——**完整命名**了。
 
-| 精度 | 数量 | 含义 |
-|---|---|---|
-| **精确含义** | ~30 | base register 已对表参数校验 |
-| **class-named** | 其余 ~65 | reader 标识 subsystem，但具体语义未明（例：`ZinValidateTd::CheckInRangeDmaAccess` 的 per-axis DMA 范围 bound） |
-| **未命名** | — | 在 `0x820`–`0x8f8` 区间被 `0x81d` texture-engine byte gate 的 plane-equation 系数等 |
+---
 
-### 8.5 两个被拒候选
+## 八、本章最重要的几个洞见（带走这五句话就够）
 
-| Offset | 拒绝原因 |
+1. **一份编译器 + 一张表 = 全代际支持。** 不同芯片之间的差别是数据，不是代码。
+2. **两道闸门**：`MinimumFamily<N>` 管算子级别，`hal[offset] & 1` 管算子内部路由，合起来才放行。
+3. **流式权重上限 16 MB，稠密权重上限 64 KB**——这是 `0x48f` 这个字节最实用的副作用。
+4. **A15 之后没有新的计算算子**，A16/A17/A18 增加的是核数和频率。
+5. **"表里有"≠"跑得起来"**。3D 卷积是经典反例。任何"原生支持"声明都必须以**实测**为准。
+
+---
+
+## 九、名词速查
+
+| 缩写/术语 | 中文/解释 |
 |---|---|
-| `0xcf8` | `adrp` 形成的 read-only constant 读取，**不** off table |
-| `0x678` | 嵌套对象，**两指针深**，不 off table |
-
-### 8.6 Struct 全貌
-
-> 整个 struct 大小 **`0x938` bytes**。其中非 capability 的少数条目是 **cost-model 系数块** `0x580`–`0x7f0`（freq→efficiency 曲线、rate index、perf multiplier，第18章 roofline 直接读）。
->
-> **`0x938` 之后没有任何表**：早期阅读曾在 `0xa30`–`0xe84` 定位一个 A12 op-emulation catalog，那是 **struct 之外相邻 zeroed memory 的误读**，不是真实字段。
-
----
-
-## 9. 全章灵魂：Attested is not reachable (§24.8)
-
-这是全章最重要、也是贯穿全文 (§4.4, §8.2) 的判据。
-
-> **HAL 表里 attested 的 capability 只证明"读它的那一层承认支持"，不证明"op 能 lower 成 task descriptor 并在 silicon 上跑"。这是两个层。第一层 attested 的 capability 可以在第二层失败。**
-
-### 固定规则的反例：3D 卷积
-
-| 层 | 状态 |
-|---|---|
-| HAL scalar `0x70` | attested 3D-conv kernel depth = 16 |
-| 编译器 frontend | 识别该操作 |
-| backend lowering | **每个 device mask 都失败**，返回 "not supported on any backend" |
-
-→ capability 在表里，op 不运行。
-
-### 反向 gap：checker 通过但 codegen 拒绝
-
-M1 上 `top-k`、`sort`、`dynamic-slice` 的 validator 都可调用，**但三个都在 code generation 被拒**。
-
-### 综合判据
-
-> 表里的 bit、识别 op 的 frontend、pass 的 validator —— 每一个都只是 **关于某一层的 claim**。只有 **target 上的 compile-and-run** 才能确认 op 在执行层真的可达。
-
-这就是为什么：
-- 第4章的 reachable surface **小于** 表 advertise 的 surface
-- 第4章每个 native 条目都是在 M1 上 **编译并运行过** 验证的，不是从 capability byte 推断的
+| **HAL** | Hardware Abstraction Layer，硬件抽象层；本章指那张芯片档案表 |
+| **capability byte** | 能力字节；表中单字节布尔开关，控制算子/格式是否启用 |
+| **MinimumFamily<N>** | 算子的"最低家族等级"属性，N 越高代表越新的代才原生支持 |
+| **NE core** | Neural Engine core，ANE 的计算核 |
+| **texture engine** | 纹理引擎；A14 起引入，支持 resize/crop-resize/affine 等 |
+| **kernel streaming master** | 内核流式主控，`0x48f` 字节，决定 64 KB 还是 16 MB 上限 |
+| **native / decompose** | 原生发射 / 分解为基础算子 |
+| **lowering** | 把高层算子翻译成硬件任务的阶段，即"后端降级" |
+| **attested vs reachable** | 表声明支持 vs. 真正能跑——本章强调二者不等价 |
 
 ---
 
-## 10. 三个值得记住的判断
-
-1. **"Per-chip 差异是数据，不是代码"**：Apple 把 28 个 target 收敛到一个二进制 + 一张表，这是 ANE 工具链最优雅的设计决策。任何"为不同 chip 编译"本质上是"换表 + 走同一份 op 重写代码"。
-
-2. **两种 gate 是分工的，不是冗余的**：
-   - `MinimumFamily` 决定 **op 是否 native**
-   - `capability byte` 决定 **op 内某条路径是否启用**
-   - 任一关闭 → decompose 或 reject。它们叠加，不互相替代
-
-3. **"Attested is not reachable" 是逆向工程的根本方法论警示**：静态分析（读表、读 frontend、读 validator）只能给"可能可达"的下界，**只有动态测量能给上界**。这是为什么作者反复强调 measured vs decompile-derived vs predicted 的区分。
-
----
-
-## 11. 与其他章节的勾连
-
-- **→ 第4章 (Capability surface)**：§4.4 "Attested is not reachable" 在 §24.8 得到完整机制解释；第4章的每个 native 条目都是 compile-and-run 验证过的
-- **→ 第8章 (Entitlement boundary)**：§8.2 的 counter-and-event engine stub 是 "attested is not reachable" 的最强形式——硬件 primitive 缺失
-- **→ 第18章 (Optimization and cost model)**：cost-model 系数块 `0x580`–`0x7f0` 嵌在 HAL 内部，roofline 直接读
-- **→ 第25章 (Compression internals)**：streaming master `0x48f`、palette stream `0x529` 决定 int4/int8/blockwise/sparse 走 stream 还是 fold 路径
-- **→ 第34章 (Cross-silicon targets)**：HAL 是 28 个 target 的统一来源；第34章的 per-family table 都源自这张表
-- **→ 第35章 (Per-family code generation)**：§35.1 "One binary, eight families" 的根基就是本章的 HAL 设计；§35.6 task-descriptor 的 per-generation field offset 也是 HAL 字段
-- **→ 第20章 (Datapath and MAC geometry)**：geometry constant（如 `pe_min_patch_width_log2 @ 0x400`）来自 HAL
-
----
-
-## 12. 速查图（一张图记住全章）
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│   单一编译器二进制 → 全 chip family 代码生成                    │
-│                                                               │
-│        target = HAL 表（编译期 per-chip 构建）                 │
-│   ┌───────────────────────────────────────────────┐           │
-│   │ ZinIrHalParameters  (struct, 0x938 bytes)     │           │
-│   │                                                │           │
-│   │  scalar region  0x18 ~ 0x348                  │           │
-│   │    - max_tensor_width, num_nes, ...           │           │
-│   │    - dense cap 0x200 (64KB)                   │           │
-│   │    - streamed cap 0x210 (16MB)                │           │
-│   │                                                │           │
-│   │  cost-model block  0x580 ~ 0x7f0              │           │
-│   │    (freq→eff curve, divisor, roofline)        │           │
-│   │                                                │           │
-│   │  capability bytes  0x48f ~ 0x8cc (165 个)     │           │
-│   │    hal[offset] & 1                            │           │
-│   │    0x48f streaming master                     │           │
-│   │    0x52d fp8 (仅 A18)                         │           │
-│   │    0x81d texture engine (M1=0, A14+=1)        │           │
-│   └───────────────────────────────────────────────┘           │
-└──────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────┐
-│   两种 gate（分工，不冗余）                                    │
-│                                                               │
-│   MinimumFamily trait  →  op 是否 native                      │
-│       F0: 全 family (conv/matmul/...)                         │
-│       F2: A13+ (softmax, norm, attention)                     │
-│       F3: A14+ (crop-resize, resample)                        │
-│       F4: A15+ (sin, cos, argmin/argmax)                      │
-│       没有任何 compute op floor > A15                          │
-│                                                               │
-│   capability byte      →  op 内部某条路径                      │
-│       hal[offset] & 1                                          │
-│                                                               │
-│   任一关闭 → decompose 或 reject                              │
-│   per-chip 差异 = 数据，不是代码                               │
-└──────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────┐
-│   灵魂判据：Attested ≠ Reachable                              │
-│                                                              │
-│   层 1: HAL 表 attested    ───┐                              │
-│   层 2: frontend 识别        ─┤ 每个都是"某一层的 claim"      │
-│   层 3: validator 通过      ──┘                              │
-│   层 4: backend lowering    ───  才是真相                     │
-│                                                              │
-│   反例 1: 3D conv @ 0x70=16  →  lowering 全失败               │
-│   反例 2: top-k/sort/dynamic-slice validator 通过但 codegen 拒 │
-│                                                              │
-│   ⇒ 只有 compile-and-run 在 target 上才能确认                 │
-│   ⇒ 第4章 reachable surface < HAL advertise 的 surface        │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-*本文档基于 arXiv:2606.22283v1 (21 Jun 2026) 第24章 (pp. 150–157) 撰写。论文为逆向工程参考文档，direct route 未被 Apple 官方支持、跨版本脆弱，仅适用于研究、测量和设备端实验，不应用于发布软件。*
+*文档整理自 arXiv:2606.22283 第 24 章，内容均为论文作者逆向工程结果（测量/反编译/预测三类来源），仅供学习研究用途。*
