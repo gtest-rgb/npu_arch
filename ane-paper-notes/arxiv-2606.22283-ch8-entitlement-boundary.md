@@ -146,6 +146,77 @@
 
 > **Reachable surface = daemon 编译器能接受的一切，而不是引擎原则上能跑的一切。**
 
+### 7.1 详解：Trustcache trust 是什么
+
+论文 §8.5 提到的 "trustcache check on the backing file's vnode" 是整个 access model 的支点，但论文本身没展开讲。这里补充背景。
+
+**Trustcache 是什么**
+
+Trustcache 是 Apple 平台代码签名体系里的核心信任机制，本质上是**一份内核常驻的"已知良好二进制"哈希白名单**。每个 trustcache 是一张 `CDHash → 信任` 的查找表：
+
+- **CDHash** = Code Directory Hash，是整个二进制代码目录的 SHA-256，唯一标识"这份 Mach-O + 它的签名结构"
+- 表里的每一项代表："这个哈希对应的二进制是 Apple 预先批准过的，加载时可跳过完整证书链验证"
+- 表存放在内核内存里，由 boot chain（LLB → iBoot → kernel）在启动时装载，**用户进程不可改**
+
+通俗类比：边防有一本"已审核护照号码本"，护照号在本本里的直接放行，不再问签证细节；不在本本里的才走完整审查。
+
+**为什么存在这个机制**
+
+完整代码签名校验（证书链 → 时间戳 → 撤销列表 → notarization）开销不小，Apple 系统里有几千个系统二进制频繁加载。所以把"已知良好"的哈希预先放进 trustcache，命中就快路径放行；用户安装的 app 不在 trustcache 里，走正常 Developer ID 签名校验。
+
+iOS 越狱研究里 "trustcache injection" 是经典攻击目标——**把自己的哈希塞进 trustcache，就获得了"系统级信任"**。
+
+**为什么 ANE 加载需要两道校验**
+
+```
+                  program bytes         backing file (vnode)
+                       │                       │
+                       ▼                       ▼
+              ┌─────────────────┐    ┌────────────────────┐
+              │ corecrypto 签名 │    │ trustcache 校验     │
+              │ 校验            │    │ (CDHash ∈ cache?)  │
+              └────────┬────────┘    └─────────┬──────────┘
+                       │                       │
+                       └───────────┬───────────┘
+                                   ▼
+                          两道都过 → 加载入引擎
+                          任一失败 → 0xe00002e2
+```
+
+- **corecrypto 校验**：对 program bytes 做签名验证（字节层面的真实性）
+- **trustcache 校验**：对 backing file 的 vnode（文件系统里的那个文件对象）做哈希检查（文件层面的可信度）
+
+只做 corecrypto 还不够，因为：
+
+- corecrypto 验的是"程序字节有没有被篡改"——保证真实性
+- 但无法回答"这份程序是不是 Apple 批准过、能不能放进 ANE 跑"——这是**策略**问题，不是密码学问题
+
+trustcache 把策略钉死在内核里：**只有哈希进了 trustcache 的程序文件，才有资格进 ANE**。而 trustcache 是 boot chain 装载的、用户进程改不了，所以这成了"硬件级信任根"的延伸。
+
+**为什么签名权被守护进程独占**
+
+把上面串起来就懂了为什么论文说"**唯一能加载的程序是系统守护进程编译并签名的**"：
+
+1. 守护进程在系统启动时就跑着，它的可执行文件**已经在 trustcache 里**
+2. 守护进程运行时**动态编译**用户提交的 IR，把编译产物作为临时文件写盘
+3. **这个临时文件的 vnode 被加进 trustcache**（通过特权路径，只有系统进程能做）
+4. 客户端通过 kernel interface 提交同一份文件的 vnode 去加载 → 双校验通过
+
+普通用户进程**没有把哈希加进 trustcache 的能力**，所以自签二进制永远过不了第二道校验，必然返回 `0xe00002e2`。
+
+**和 entitlement / sandbox 的层次区别**
+
+| 机制 | 检查对象 | 谁能修改 | 在 ANE 流程里位置 |
+|---|---|---|---|
+| Entitlement | 进程签名里的能力清单 | 开发者（构建时）+ Apple（审批） | 最上游，用户进程入口 |
+| Sandbox | 进程能否访问资源 | 系统策略 | 进程运行时 |
+| **Trustcache** | **二进制哈希白名单** | **boot chain，用户进程不可改** | **ANE 程序加载时（最关键一道）** |
+| Code signing | 证书链有效性 | 开发者（签名） | 进程启动 / 库加载时 |
+
+trustcache 比 entitlement 更底层、更硬：**entitlement 是"允许做什么"的策略，trustcache 是"承认谁存在"的事实**。Apple 通过把"ANE 程序哈希塞进 trustcache"这件事独占给守护进程，把整个 ANE 的可达面收敛到了守护进程编译器。
+
+> **一句话**：trustcache trust = "这个文件的哈希在内核的预批准白名单里吗？" 是 ANE 加载流程里**比 corecrypto 更策略化、也更难绕过**的一道关卡，也是守护进程能独占 ANE 签名权的物理基础。
+
 ---
 
 ## 8. Unentitled dispatch 三步法 (§8.6)
