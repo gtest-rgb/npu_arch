@@ -11,7 +11,7 @@
 | 章节 | 标题 | 笔记 |
 |---|---|---|
 | 7 | Weights and compression | [arxiv-2606.22283-ch7-weights-compression.md](./arxiv-2606.22283-ch7-weights-compression.md) |
-| 8 | Entitlement boundary | [arxiv-2606.22283-ch8-entitlement-boundary.md](./arxiv-2606.22283-ch8-entitlement-boundary.md) |
+| 8 | Entitlement boundary | [深度版](./arxiv-2606.22283-ch8-entitlement-boundary.md) · [精炼版](./arxiv-2606.22283-ch8-entitlement-boundary-condensed.md) |
 | 24 | HAL and capability gates | [arxiv-2606.22283-ch24-hal-capability-gates.md](./arxiv-2606.22283-ch24-hal-capability-gates.md) |
 | 25 | Compression internals | [arxiv-2606.22283-ch25-compression-internals.md](./arxiv-2606.22283-ch25-compression-internals.md) |
 | 26 | Hidden layers & direct netplist authoring | [arxiv-2606.22283-ch26-hidden-layers-netplist.md](./arxiv-2606.22283-ch26-hidden-layers-netplist.md) |
