@@ -13,7 +13,7 @@
 | 7 | Weights and compression | [arxiv-2606.22283-ch7-weights-compression.md](./arxiv-2606.22283-ch7-weights-compression.md) |
 | 8 | Entitlement boundary | [深度版](./arxiv-2606.22283-ch8-entitlement-boundary.md) · [精炼版](./arxiv-2606.22283-ch8-entitlement-boundary-condensed.md) |
 | 24 | HAL and capability gates | [深度版](./arxiv-2606.22283-ch24-hal-capability-gates.md) · [精炼版](./arxiv-2606.22283-ch24-hal-capability-gates-condensed.md) · [算子校验流程专题](./arxiv-2606.22283-ch24-op-validation-flow.md) |
-| 25 | Compression internals | [深度版](./arxiv-2606.22283-ch25-compression-internals.md) · [精炼版](./arxiv-2606.22283-ch25-compression-internals-condensed.md) |
+| 25 | Compression internals | [深度版](./arxiv-2606.22283-ch25-compression-internals.md) · [精炼版](./arxiv-2606.22283-ch25-compression-internals-condensed.md) · [权重的一生专题](./arxiv-2606.22283-ch25-weight-lifecycle.md) |
 | 26 | Hidden layers & direct netplist authoring | [arxiv-2606.22283-ch26-hidden-layers-netplist.md](./arxiv-2606.22283-ch26-hidden-layers-netplist.md) |
 
 ## 两条互补的 reachability 视角
