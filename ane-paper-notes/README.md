@@ -10,6 +10,7 @@
 
 | 章节 | 标题 | 笔记 |
 |---|---|---|
+| 7 | Weights and compression | [arxiv-2606.22283-ch7-weights-compression.md](./arxiv-2606.22283-ch7-weights-compression.md) |
 | 8 | Entitlement boundary | [arxiv-2606.22283-ch8-entitlement-boundary.md](./arxiv-2606.22283-ch8-entitlement-boundary.md) |
 | 24 | HAL and capability gates | [arxiv-2606.22283-ch24-hal-capability-gates.md](./arxiv-2606.22283-ch24-hal-capability-gates.md) |
 | 25 | Compression internals | [arxiv-2606.22283-ch25-compression-internals.md](./arxiv-2606.22283-ch25-compression-internals.md) |
@@ -21,6 +22,10 @@
 - **第24章（硬件 attested）**：HAL 表 + MinimumFamily trait——回答"一块芯片表里声明支持哪些 op"
 
 两者共同构成 ANE 的能力边界判据：**attested ⊋ reachable**，软件 entitlement 无法撼动硬件 primitive 缺失。
+
+## 第 7 章主线
+
+**四种压缩格式（int8 仿射 / int4 LUT / 结构化稀疏 / 块级仿射）在乘法器入口处被现场还原成 fp16**，省的是 DRAM→引擎的字节流量而不是磁盘。同一种格式在不同代芯片上命运不同——**stream（真省带宽）vs fold（只省磁盘）由 HAL feature byte 决定，不由声明决定**。M1 只让 int4 LUT（2.37×）和结构化稀疏（1.55–1.64×）流式，int8 和块级仿射 fold；A14 起 int8 流；A15 起块级流；M5 上四种齐齐 1.6–1.8×。安全性来自宽累加器（权重先还原 fp16 再走相同乘加），累加精度无损。第7章是用户视角的地图，第25章是同主题的内部剖面。
 
 ## 第 25 章主线
 
