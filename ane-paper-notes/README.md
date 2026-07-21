@@ -14,7 +14,7 @@
 | 8 | Entitlement boundary | [深度版](./arxiv-2606.22283-ch8-entitlement-boundary.md) · [精炼版](./arxiv-2606.22283-ch8-entitlement-boundary-condensed.md) |
 | 24 | HAL and capability gates | [深度版](./arxiv-2606.22283-ch24-hal-capability-gates.md) · [精炼版](./arxiv-2606.22283-ch24-hal-capability-gates-condensed.md) · [算子校验流程专题](./arxiv-2606.22283-ch24-op-validation-flow.md) |
 | 25 | Compression internals | [深度版](./arxiv-2606.22283-ch25-compression-internals.md) · [精炼版](./arxiv-2606.22283-ch25-compression-internals-condensed.md) · [权重的一生](./arxiv-2606.22283-ch25-weight-lifecycle.md) · [流式 vs 折叠决策路径](./arxiv-2606.22283-ch25-stream-vs-fold-paths.md) |
-| 26 | Hidden layers & direct netplist authoring | [深度版](./arxiv-2606.22283-ch26-hidden-layers-netplist.md) · [精炼版](./arxiv-2606.22283-ch26-hidden-layers-netplist-condensed.md) |
+| 26 | Hidden layers & direct netplist authoring | [深度版](./arxiv-2606.22283-ch26-hidden-layers-netplist.md) · [精炼版](./arxiv-2606.22283-ch26-hidden-layers-netplist-condensed.md) · [190/45/Zin IR 三层算子目录关系](./arxiv-2606.22283-ch26-op-set-layering.md) |
 
 ## 两条互补的 reachability 视角
 
