@@ -10,7 +10,7 @@
 
 | 章节 | 标题 | 笔记 |
 |---|---|---|
-| 6 | Dispatching without Core ML | [arxiv-2606.22283-ch6-dispatching-without-coreml.md](./arxiv-2606.22283-ch6-dispatching-without-coreml.md) |
+| 6 | Dispatching without Core ML | [arxiv-2606.22283-ch6-dispatching-without-coreml.md](./arxiv-2606.22283-ch6-dispatching-without-coreml.md) · [retain_program_function 语义专题](./arxiv-2606.22283-ch6-retain-function-semantics.md) |
 | 7 | Weights and compression | [arxiv-2606.22283-ch7-weights-compression.md](./arxiv-2606.22283-ch7-weights-compression.md) |
 | 8 | Entitlement boundary | [深度版](./arxiv-2606.22283-ch8-entitlement-boundary.md) · [精炼版](./arxiv-2606.22283-ch8-entitlement-boundary-condensed.md) |
 | 24 | HAL and capability gates | [深度版](./arxiv-2606.22283-ch24-hal-capability-gates.md) · [精炼版](./arxiv-2606.22283-ch24-hal-capability-gates-condensed.md) · [算子校验流程专题](./arxiv-2606.22283-ch24-op-validation-flow.md) |
