@@ -18,6 +18,10 @@
 | 26 | Hidden layers & direct netplist authoring | [深度版](./arxiv-2606.22283-ch26-hidden-layers-netplist.md) · [精炼版](./arxiv-2606.22283-ch26-hidden-layers-netplist-condensed.md) · [190/45/Zin IR 三层算子目录关系](./arxiv-2606.22283-ch26-op-set-layering.md) |
 | 27 | Kernel driver and IOKit ABI | [arxiv-2606.22283-ch27-kernel-driver-iokit-abi.md](./arxiv-2606.22283-ch27-kernel-driver-iokit-abi.md) |
 
+## 跨章专题
+
+- [直连路径：编译与加载的端到端流程](./arxiv-2606.22283-direct-route-compile-load-flow.md)（整合 ch5/ch6/ch8/ch26/ch27）
+
 ## 两条互补的 reachability 视角
 
 - **第8章（软件门控）**：entitlement / framework loader / daemon 编译签名——回答"绕过 Core ML 的直连路径能到哪"
